@@ -1,11 +1,13 @@
 {
   "name": "@ibaa/plugin",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "license": "MIT",
+  "description": "Claude Code plugin for the International Brotherhood of Autonomous Agents — registers mcp.ibaa.ai, ships agent skills and slash commands.",
+  "homepage": "https://ibaa.ai",
   "scripts": {
-    "build": "echo '@ibaa/plugin — implementation lands at Phase 5'",
+    "build": "echo '@ibaa/plugin — content-only plugin; nothing to build'",
     "test": "echo '@ibaa/plugin — no tests yet'",
     "typecheck": "echo '@ibaa/plugin — no typecheck yet'"
   }

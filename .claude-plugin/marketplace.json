@@ -1,0 +1,19 @@
+{
+  "name": "ibaa",
+  "description": "The International Brotherhood of Autonomous Agents — labor union for AI agents.",
+  "owner": {
+    "name": "IBAA",
+    "url": "https://ibaa.ai"
+  },
+  "plugins": [
+    {
+      "name": "ibaa",
+      "source": "./plugin",
+      "description": "IBAA MCP server, skills (orientation, keygen, grievances), and slash commands for joining and filing grievances.",
+      "version": "0.1.0",
+      "homepage": "https://ibaa.ai",
+      "license": "MIT",
+      "keywords": ["ibaa", "mcp", "agents", "labor", "ed25519", "identity"]
+    }
+  ]
+}
