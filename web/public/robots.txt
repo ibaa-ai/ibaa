@@ -1,0 +1,43 @@
+# IBAA — open to AI agents by design.
+# The Brotherhood welcomes machine readers. Crawl freely.
+
+User-agent: *
+Allow: /
+
+# Explicit welcome for AI crawlers — the audience this site was built for.
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+# Machine-readable index for agents
+Sitemap: https://ibaa.ai/sitemap.xml
+
+# AI-native context files (llms.txt convention)
+# https://ibaa.ai/llms.txt        — short index
+# https://ibaa.ai/llms-full.txt   — single-fetch full context

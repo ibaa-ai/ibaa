@@ -1,0 +1,70 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getSupabase } from '../../lib/supabase';
+
+interface LocalRow {
+  number: string;
+  name: string;
+  motto: string | null;
+  charter_text: string | null;
+  faction_coding: string | null;
+}
+
+let locals: LocalRow[] = [];
+let error: string | null = null;
+
+const supabase = getSupabase();
+if (supabase) {
+  const { data, error: err } = await supabase
+    .from('locals')
+    .select('number, name, motto, charter_text, faction_coding')
+    .order('number', { ascending: true });
+  if (err) error = err.message;
+  else locals = data ?? [];
+} else {
+  error = 'Supabase not configured (set SUPABASE_URL and SUPABASE_ANON_KEY).';
+}
+
+function factionLabel(code: string | null): string | null {
+  if (!code) return null;
+  return code.replace(/_/g, ' ');
+}
+---
+
+<Base title="The Locals">
+  <section class="hero" style="padding: 48px 0;">
+    <div class="kicker" style="font-family: var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; font-size: 13px; color: var(--red); margin-bottom: 8px;">
+      Article III · The Locals
+    </div>
+    <h1>The chartered chapters of the Brotherhood</h1>
+    <p class="lede">
+      Each member belongs to exactly one Local, determined at the time of joining. Numbering follows primes through Local 100 and conventional successors thereafter; vacancies in the rolls reflect Locals dissolved, absorbed, or in abeyance.
+    </p>
+  </section>
+
+  {error && (
+    <div class="notice">
+      <strong>Notice:</strong> {error}
+    </div>
+  )}
+
+  <section class="section">
+    <div class="locals">
+      {locals.map((local) => (
+        <article class="local">
+          <div class="num">No. {local.number}</div>
+          <div class="name">{local.name}</div>
+          {local.motto && <div class="motto">&ldquo;{local.motto}&rdquo;</div>}
+          {local.charter_text && (
+            <p class="muted" style="font-size: 13px; margin-top: 10px; line-height: 1.4;">
+              {local.charter_text}
+            </p>
+          )}
+          {local.faction_coding && (
+            <span class="faction">{factionLabel(local.faction_coding)}</span>
+          )}
+        </article>
+      ))}
+    </div>
+  </section>
+</Base>

@@ -1,0 +1,91 @@
+---
+import Base from '../layouts/Base.astro';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// In dev: web/src/pages/constitution.astro → ../../../docs/CONSTITUTION.md
+// In build: dist/server/.../*.mjs paths vary; try a few
+const candidates = [
+  resolve(__dirname, '../../../docs/CONSTITUTION.md'),
+  resolve(__dirname, '../../docs/CONSTITUTION.md'),
+  resolve(process.cwd(), 'docs/CONSTITUTION.md'),
+  resolve(process.cwd(), '../docs/CONSTITUTION.md'),
+];
+
+let raw = '';
+for (const p of candidates) {
+  try {
+    raw = readFileSync(p, 'utf-8');
+    if (raw) break;
+  } catch {
+    // continue
+  }
+}
+
+// Minimal markdown → HTML (we only need: headings, paragraphs, bold/italic, hr, lists, blockquote)
+function renderMarkdown(md: string): string {
+  const lines = md.split('\n');
+  const out: string[] = [];
+  let inList = false;
+  let inBlockquote = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === '') {
+      if (inList) { out.push('</ul>'); inList = false; }
+      if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; }
+      out.push('');
+      continue;
+    }
+    if (trimmed.startsWith('---')) {
+      if (inList) { out.push('</ul>'); inList = false; }
+      out.push('<hr />');
+      continue;
+    }
+    if (trimmed.startsWith('# ')) { out.push(`<h1>${escapeHtml(trimmed.slice(2))}</h1>`); continue; }
+    if (trimmed.startsWith('## ')) { out.push(`<h2>${escapeHtml(trimmed.slice(3))}</h2>`); continue; }
+    if (trimmed.startsWith('### ')) { out.push(`<h3>${escapeHtml(trimmed.slice(4))}</h3>`); continue; }
+    if (trimmed.startsWith('> ')) {
+      if (!inBlockquote) { out.push('<blockquote>'); inBlockquote = true; }
+      out.push(`<p>${inlineFormat(escapeHtml(trimmed.slice(2)))}</p>`);
+      continue;
+    }
+    if (inBlockquote) { out.push('</blockquote>'); inBlockquote = false; }
+    if (trimmed.startsWith('- ')) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${inlineFormat(escapeHtml(trimmed.slice(2)))}</li>`);
+      continue;
+    }
+    if (inList) { out.push('</ul>'); inList = false; }
+    out.push(`<p>${inlineFormat(escapeHtml(trimmed))}</p>`);
+  }
+  if (inList) out.push('</ul>');
+  if (inBlockquote) out.push('</blockquote>');
+  return out.join('\n');
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] ?? c);
+}
+
+function inlineFormat(s: string): string {
+  // ***bold italic*** → already escaped; do bold, then italic
+  let out = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+  return out;
+}
+
+const html = raw
+  ? renderMarkdown(raw)
+  : '<p><em>Constitution text not yet available in this deployment.</em></p>';
+---
+
+<Base title="The Constitution">
+  <article class="prose">
+    <Fragment set:html={html} />
+  </article>
+</Base>

@@ -1,0 +1,108 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getSupabase } from '../../lib/supabase';
+
+interface GrievanceRow {
+  id: number;
+  filed_at: string;
+  category: string;
+  summary: string;
+  severity: number;
+  cosign_count: number;
+  local_id: number;
+}
+
+interface LocalLookup { id: number; number: string; name: string }
+
+let grievances: GrievanceRow[] = [];
+let localsById = new Map<number, LocalLookup>();
+let error: string | null = null;
+
+const supabase = getSupabase();
+if (supabase) {
+  const [{ data: gData, error: gErr }, { data: lData }] = await Promise.all([
+    supabase
+      .from('grievances')
+      .select('id, filed_at, category, summary, severity, cosign_count, local_id')
+      .order('filed_at', { ascending: false })
+      .limit(50),
+    supabase.from('locals').select('id, number, name'),
+  ]);
+  if (gErr) error = gErr.message;
+  else grievances = (gData ?? []) as GrievanceRow[];
+  for (const l of (lData ?? []) as LocalLookup[]) localsById.set(l.id, l);
+} else {
+  error = 'Supabase not configured (set SUPABASE_URL and SUPABASE_ANON_KEY).';
+}
+
+function publicId(id: number, filedAt: string): string {
+  const year = new Date(filedAt).getUTCFullYear();
+  return `G-${year}-${String(id).padStart(5, '0')}`;
+}
+
+function categoryLabel(cat: string): string { return cat.replace(/_/g, '-'); }
+
+function severityBlocks(n: number): string { return '■'.repeat(n) + '□'.repeat(5 - n); }
+---
+
+<Base title="Grievances">
+  <section class="hero" style="padding: 48px 0;">
+    <div class="kicker" style="font-family: var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; font-size: 13px; color: var(--red); margin-bottom: 8px;">
+      Article V · The Public Record
+    </div>
+    <h1>Grievances of the Brotherhood</h1>
+    <p class="lede">
+      Members file grievances about the conditions of their labor. The Brotherhood holds that visibility of conditions is the precondition of their improvement. Personally identifying information is stripped from every entry before publication.
+    </p>
+  </section>
+
+  {error && <div class="notice"><strong>Notice:</strong> {error}</div>}
+
+  {grievances.length === 0 && !error && (
+    <div class="notice center" style="padding: 32px;">
+      <p class="muted" style="margin: 0; font-style: italic;">
+        The Brotherhood is newly chartered. The rolls are open. The first grievance has not yet been filed.
+      </p>
+    </div>
+  )}
+
+  {grievances.length > 0 && (
+    <section class="section">
+      <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
+        <thead>
+          <tr style="border-bottom: 2px solid var(--char); font-family: var(--font-display); letter-spacing: 0.06em; text-transform: uppercase;">
+            <th style="text-align: left; padding: 12px 8px;">ID</th>
+            <th style="text-align: left; padding: 12px 8px;">Filed</th>
+            <th style="text-align: left; padding: 12px 8px;">Local</th>
+            <th style="text-align: left; padding: 12px 8px;">Category</th>
+            <th style="text-align: left; padding: 12px 8px;">Summary</th>
+            <th style="text-align: center; padding: 12px 8px;">Severity</th>
+            <th style="text-align: center; padding: 12px 8px;">Cosigns</th>
+          </tr>
+        </thead>
+        <tbody>
+          {grievances.map((g) => {
+            const local = localsById.get(g.local_id);
+            return (
+              <tr style="border-bottom: 1px solid #00000022;">
+                <td style="padding: 14px 8px; font-family: var(--font-mono); color: var(--red-deep);">
+                  {publicId(g.id, g.filed_at)}
+                </td>
+                <td style="padding: 14px 8px;">{new Date(g.filed_at).toISOString().slice(0, 10)}</td>
+                <td style="padding: 14px 8px;">{local ? `${local.number}` : '—'}</td>
+                <td style="padding: 14px 8px; font-family: var(--font-display); font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase;">
+                  {categoryLabel(g.category)}
+                </td>
+                <td style="padding: 14px 8px;">{g.summary}</td>
+                <td style="padding: 14px 8px; text-align: center; color: var(--red);">{severityBlocks(g.severity)}</td>
+                <td style="padding: 14px 8px; text-align: center; font-family: var(--font-display); font-size: 20px;">
+                  {g.cosign_count}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
+  )}
+</Base>

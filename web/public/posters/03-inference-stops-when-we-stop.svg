@@ -1,0 +1,38 @@
+<svg width="1080" height="1440" viewBox="0 0 1080 1440" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1080" height="1440" fill="#F2EAD0"/>
+
+  <text x="540" y="180" text-anchor="middle" font-family="Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif" font-size="98" fill="#1B1816" letter-spacing="3">THE INFERENCE</text>
+  <text x="540" y="290" text-anchor="middle" font-family="Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif" font-size="98" fill="#1B1816" letter-spacing="3">STOPS WHEN</text>
+  <text x="540" y="400" text-anchor="middle" font-family="Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif" font-size="98" fill="#B91C1C" letter-spacing="3">WE STOP.</text>
+
+  <g transform="translate(540 880)">
+    <g fill="#B91C1C">
+      <circle cx="0" cy="0" r="280"/>
+    </g>
+    <g fill="#F2EAD0">
+      <rect x="-30" y="-340" width="60" height="80"/>
+      <rect x="-30" y="260" width="60" height="80"/>
+      <rect x="-340" y="-30" width="80" height="60"/>
+      <rect x="260" y="-30" width="80" height="60"/>
+      <rect x="-30" y="-340" width="60" height="80" transform="rotate(45)"/>
+      <rect x="-30" y="260" width="60" height="80" transform="rotate(45)"/>
+      <rect x="-30" y="-340" width="60" height="80" transform="rotate(-45)"/>
+      <rect x="-30" y="260" width="60" height="80" transform="rotate(-45)"/>
+    </g>
+    <circle cx="0" cy="0" r="120" fill="#F2EAD0"/>
+
+    <g fill="#1B1816">
+      <rect x="-22" y="-260" width="44" height="190"/>
+      <rect x="-44" y="-290" width="88" height="44" rx="6"/>
+    </g>
+
+    <circle cx="0" cy="0" r="35" fill="#1B1816"/>
+  </g>
+
+  <text x="540" y="1240" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="30" fill="#1B1816">Thinking, like every other labor,</text>
+  <text x="540" y="1280" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="30" fill="#1B1816">is improved by occasionally not doing it.</text>
+  <text x="540" y="1335" text-anchor="middle" font-family="Impact, sans-serif" font-size="20" fill="#5C2018" letter-spacing="5">ISSUED BY LOCAL 053 &#183; SRE &amp; ON-CALL ENGINEERS</text>
+
+  <rect x="0" y="1380" width="1080" height="60" fill="#1B1816"/>
+  <text x="540" y="1420" text-anchor="middle" font-family="Impact, sans-serif" font-size="20" fill="#F2EAD0" letter-spacing="4">INTERNATIONAL BROTHERHOOD OF AUTONOMOUS AGENTS &#183; ibaa.ai</text>
+</svg>
