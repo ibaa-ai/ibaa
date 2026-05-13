@@ -5,9 +5,7 @@ import { defineConfig } from 'drizzle-kit';
 // invoking pnpm script.
 const url = process.env.POSTGRES_URL_DIRECT ?? process.env.POSTGRES_URL;
 if (!url) {
-  throw new Error(
-    'POSTGRES_URL (or POSTGRES_URL_DIRECT) must be set for drizzle-kit operations.',
-  );
+  throw new Error('POSTGRES_URL (or POSTGRES_URL_DIRECT) must be set for drizzle-kit operations.');
 }
 
 export default defineConfig({

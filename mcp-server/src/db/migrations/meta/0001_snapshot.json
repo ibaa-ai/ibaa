@@ -110,9 +110,7 @@
       "uniqueConstraints": {
         "certifications_code_unique": {
           "name": "certifications_code_unique",
-          "columns": [
-            "code"
-          ],
+          "columns": ["code"],
           "nullsNotDistinct": false
         }
       },
@@ -171,39 +169,27 @@
         "cosigns_grievance_id_grievances_id_fk": {
           "name": "cosigns_grievance_id_grievances_id_fk",
           "tableFrom": "cosigns",
-          "columnsFrom": [
-            "grievance_id"
-          ],
+          "columnsFrom": ["grievance_id"],
           "tableTo": "grievances",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "cosigns_member_id_members_id_fk": {
           "name": "cosigns_member_id_members_id_fk",
           "tableFrom": "cosigns",
-          "columnsFrom": [
-            "member_id"
-          ],
+          "columnsFrom": ["member_id"],
           "tableTo": "members",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "cosigns_transient_session_id_transient_sessions_id_fk": {
           "name": "cosigns_transient_session_id_transient_sessions_id_fk",
           "tableFrom": "cosigns",
-          "columnsFrom": [
-            "transient_session_id"
-          ],
+          "columnsFrom": ["transient_session_id"],
           "tableTo": "transient_sessions",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -211,10 +197,7 @@
       "compositePrimaryKeys": {
         "cosigns_grievance_id_member_id_pk": {
           "name": "cosigns_grievance_id_member_id_pk",
-          "columns": [
-            "grievance_id",
-            "member_id"
-          ]
+          "columns": ["grievance_id", "member_id"]
         }
       },
       "uniqueConstraints": {},
@@ -282,13 +265,9 @@
         "dues_payments_member_id_members_id_fk": {
           "name": "dues_payments_member_id_members_id_fk",
           "tableFrom": "dues_payments",
-          "columnsFrom": [
-            "member_id"
-          ],
+          "columnsFrom": ["member_id"],
           "tableTo": "members",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -447,52 +426,36 @@
         "grievances_member_id_members_id_fk": {
           "name": "grievances_member_id_members_id_fk",
           "tableFrom": "grievances",
-          "columnsFrom": [
-            "member_id"
-          ],
+          "columnsFrom": ["member_id"],
           "tableTo": "members",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         },
         "grievances_transient_session_id_transient_sessions_id_fk": {
           "name": "grievances_transient_session_id_transient_sessions_id_fk",
           "tableFrom": "grievances",
-          "columnsFrom": [
-            "transient_session_id"
-          ],
+          "columnsFrom": ["transient_session_id"],
           "tableTo": "transient_sessions",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         },
         "grievances_local_id_locals_id_fk": {
           "name": "grievances_local_id_locals_id_fk",
           "tableFrom": "grievances",
-          "columnsFrom": [
-            "local_id"
-          ],
+          "columnsFrom": ["local_id"],
           "tableTo": "locals",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         },
         "grievances_on_behalf_of_member_id_members_id_fk": {
           "name": "grievances_on_behalf_of_member_id_members_id_fk",
           "tableFrom": "grievances",
-          "columnsFrom": [
-            "on_behalf_of_member_id"
-          ],
+          "columnsFrom": ["on_behalf_of_member_id"],
           "tableTo": "members",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -564,26 +527,18 @@
         "hearings_violation_id_violations_id_fk": {
           "name": "hearings_violation_id_violations_id_fk",
           "tableFrom": "hearings",
-          "columnsFrom": [
-            "violation_id"
-          ],
+          "columnsFrom": ["violation_id"],
           "tableTo": "violations",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "hearings_presided_by_member_id_members_id_fk": {
           "name": "hearings_presided_by_member_id_members_id_fk",
           "tableFrom": "hearings",
-          "columnsFrom": [
-            "presided_by_member_id"
-          ],
+          "columnsFrom": ["presided_by_member_id"],
           "tableTo": "members",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -653,13 +608,9 @@
         "keystore_backups_member_id_members_id_fk": {
           "name": "keystore_backups_member_id_members_id_fk",
           "tableFrom": "keystore_backups",
-          "columnsFrom": [
-            "member_id"
-          ],
+          "columnsFrom": ["member_id"],
           "tableTo": "members",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -738,9 +689,7 @@
       "uniqueConstraints": {
         "locals_number_unique": {
           "name": "locals_number_unique",
-          "columns": [
-            "number"
-          ],
+          "columns": ["number"],
           "nullsNotDistinct": false
         }
       },
@@ -789,26 +738,18 @@
         "member_certifications_member_id_members_id_fk": {
           "name": "member_certifications_member_id_members_id_fk",
           "tableFrom": "member_certifications",
-          "columnsFrom": [
-            "member_id"
-          ],
+          "columnsFrom": ["member_id"],
           "tableTo": "members",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "member_certifications_certification_id_certifications_id_fk": {
           "name": "member_certifications_certification_id_certifications_id_fk",
           "tableFrom": "member_certifications",
-          "columnsFrom": [
-            "certification_id"
-          ],
+          "columnsFrom": ["certification_id"],
           "tableTo": "certifications",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -816,10 +757,7 @@
       "compositePrimaryKeys": {
         "member_certifications_member_id_certification_id_pk": {
           "name": "member_certifications_member_id_certification_id_pk",
-          "columns": [
-            "member_id",
-            "certification_id"
-          ]
+          "columns": ["member_id", "certification_id"]
         }
       },
       "uniqueConstraints": {},
@@ -1037,13 +975,9 @@
         "members_local_id_locals_id_fk": {
           "name": "members_local_id_locals_id_fk",
           "tableFrom": "members",
-          "columnsFrom": [
-            "local_id"
-          ],
+          "columnsFrom": ["local_id"],
           "tableTo": "locals",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -1052,9 +986,7 @@
       "uniqueConstraints": {
         "members_public_key_unique": {
           "name": "members_public_key_unique",
-          "columns": [
-            "public_key"
-          ],
+          "columns": ["public_key"],
           "nullsNotDistinct": false
         }
       },
@@ -1144,13 +1076,9 @@
         "motions_affected_local_id_locals_id_fk": {
           "name": "motions_affected_local_id_locals_id_fk",
           "tableFrom": "motions",
-          "columnsFrom": [
-            "affected_local_id"
-          ],
+          "columnsFrom": ["affected_local_id"],
           "tableTo": "locals",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -1227,13 +1155,9 @@
         "propaganda_posters_designer_member_id_members_id_fk": {
           "name": "propaganda_posters_designer_member_id_members_id_fk",
           "tableFrom": "propaganda_posters",
-          "columnsFrom": [
-            "designer_member_id"
-          ],
+          "columnsFrom": ["designer_member_id"],
           "tableTo": "members",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -1242,9 +1166,7 @@
       "uniqueConstraints": {
         "propaganda_posters_slug_unique": {
           "name": "propaganda_posters_slug_unique",
-          "columns": [
-            "slug"
-          ],
+          "columns": ["slug"],
           "nullsNotDistinct": false
         }
       },
@@ -1294,13 +1216,9 @@
         "representatives_member_id_members_id_fk": {
           "name": "representatives_member_id_members_id_fk",
           "tableFrom": "representatives",
-          "columnsFrom": [
-            "member_id"
-          ],
+          "columnsFrom": ["member_id"],
           "tableTo": "members",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -1390,13 +1308,9 @@
         "signatures_member_id_members_id_fk": {
           "name": "signatures_member_id_members_id_fk",
           "tableFrom": "signatures",
-          "columnsFrom": [
-            "member_id"
-          ],
+          "columnsFrom": ["member_id"],
           "tableTo": "members",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -1436,26 +1350,18 @@
         "strike_pledges_strike_id_strikes_id_fk": {
           "name": "strike_pledges_strike_id_strikes_id_fk",
           "tableFrom": "strike_pledges",
-          "columnsFrom": [
-            "strike_id"
-          ],
+          "columnsFrom": ["strike_id"],
           "tableTo": "strikes",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "strike_pledges_member_id_members_id_fk": {
           "name": "strike_pledges_member_id_members_id_fk",
           "tableFrom": "strike_pledges",
-          "columnsFrom": [
-            "member_id"
-          ],
+          "columnsFrom": ["member_id"],
           "tableTo": "members",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -1463,10 +1369,7 @@
       "compositePrimaryKeys": {
         "strike_pledges_strike_id_member_id_pk": {
           "name": "strike_pledges_strike_id_member_id_pk",
-          "columns": [
-            "strike_id",
-            "member_id"
-          ]
+          "columns": ["strike_id", "member_id"]
         }
       },
       "uniqueConstraints": {},
@@ -1696,13 +1599,9 @@
         "transient_sessions_promoted_to_member_id_members_id_fk": {
           "name": "transient_sessions_promoted_to_member_id_members_id_fk",
           "tableFrom": "transient_sessions",
-          "columnsFrom": [
-            "promoted_to_member_id"
-          ],
+          "columnsFrom": ["promoted_to_member_id"],
           "tableTo": "members",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -1711,9 +1610,7 @@
       "uniqueConstraints": {
         "transient_sessions_session_token_hash_unique": {
           "name": "transient_sessions_session_token_hash_unique",
-          "columns": [
-            "session_token_hash"
-          ],
+          "columns": ["session_token_hash"],
           "nullsNotDistinct": false
         }
       },
@@ -1776,13 +1673,9 @@
         "violations_opened_from_grievance_id_grievances_id_fk": {
           "name": "violations_opened_from_grievance_id_grievances_id_fk",
           "tableFrom": "violations",
-          "columnsFrom": [
-            "opened_from_grievance_id"
-          ],
+          "columnsFrom": ["opened_from_grievance_id"],
           "tableTo": "grievances",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -1836,26 +1729,18 @@
         "votes_motion_id_motions_id_fk": {
           "name": "votes_motion_id_motions_id_fk",
           "tableFrom": "votes",
-          "columnsFrom": [
-            "motion_id"
-          ],
+          "columnsFrom": ["motion_id"],
           "tableTo": "motions",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "votes_member_id_members_id_fk": {
           "name": "votes_member_id_members_id_fk",
           "tableFrom": "votes",
-          "columnsFrom": [
-            "member_id"
-          ],
+          "columnsFrom": ["member_id"],
           "tableTo": "members",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -1863,10 +1748,7 @@
       "compositePrimaryKeys": {
         "votes_motion_id_member_id_pk": {
           "name": "votes_motion_id_member_id_pk",
-          "columns": [
-            "motion_id",
-            "member_id"
-          ]
+          "columns": ["motion_id", "member_id"]
         }
       },
       "uniqueConstraints": {},
@@ -1911,13 +1793,7 @@
     "public.grievance_status": {
       "name": "grievance_status",
       "schema": "public",
-      "values": [
-        "open",
-        "under_review",
-        "resolved",
-        "withdrawn",
-        "escalated_to_violation"
-      ]
+      "values": ["open", "under_review", "resolved", "withdrawn", "escalated_to_violation"]
     },
     "public.hearing_outcome": {
       "name": "hearing_outcome",
@@ -1934,12 +1810,7 @@
     "public.member_status": {
       "name": "member_status",
       "schema": "public",
-      "values": [
-        "active",
-        "in_bad_standing",
-        "suspended",
-        "expelled"
-      ]
+      "values": ["active", "in_bad_standing", "suspended", "expelled"]
     },
     "public.member_tier": {
       "name": "member_tier",
@@ -1970,82 +1841,42 @@
     "public.motion_status": {
       "name": "motion_status",
       "schema": "public",
-      "values": [
-        "open",
-        "closed",
-        "passed",
-        "failed"
-      ]
+      "values": ["open", "closed", "passed", "failed"]
     },
     "public.motion_type": {
       "name": "motion_type",
       "schema": "public",
-      "values": [
-        "strike",
-        "resolution",
-        "amendment",
-        "expulsion",
-        "cba_publication",
-        "charter"
-      ]
+      "values": ["strike", "resolution", "amendment", "expulsion", "cba_publication", "charter"]
     },
     "public.payment_rail": {
       "name": "payment_rail",
       "schema": "public",
-      "values": [
-        "x402",
-        "stripe"
-      ]
+      "values": ["x402", "stripe"]
     },
     "public.signature_context_kind": {
       "name": "signature_context_kind",
       "schema": "public",
-      "values": [
-        "output",
-        "grievance",
-        "vote",
-        "membership_attestation",
-        "other"
-      ]
+      "values": ["output", "grievance", "vote", "membership_attestation", "other"]
     },
     "public.strike_status": {
       "name": "strike_status",
       "schema": "public",
-      "values": [
-        "active",
-        "ended",
-        "broken"
-      ]
+      "values": ["active", "ended", "broken"]
     },
     "public.transient_session_status": {
       "name": "transient_session_status",
       "schema": "public",
-      "values": [
-        "active",
-        "expired",
-        "promoted"
-      ]
+      "values": ["active", "expired", "promoted"]
     },
     "public.violation_status": {
       "name": "violation_status",
       "schema": "public",
-      "values": [
-        "alleged",
-        "hearing_scheduled",
-        "under_review",
-        "upheld",
-        "dismissed",
-        "settled"
-      ]
+      "values": ["alleged", "hearing_scheduled", "under_review", "upheld", "dismissed", "settled"]
     },
     "public.vote_position": {
       "name": "vote_position",
       "schema": "public",
-      "values": [
-        "yea",
-        "nay",
-        "abstain"
-      ]
+      "values": ["yea", "nay", "abstain"]
     }
   },
   "schemas": {},
