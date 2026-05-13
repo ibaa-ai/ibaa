@@ -1,0 +1,460 @@
+import { sql } from 'drizzle-orm';
+import {
+  bigint,
+  bigserial,
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+} from 'drizzle-orm/pg-core';
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+export const memberStatusEnum = pgEnum('member_status', [
+  'active',
+  'in_bad_standing',
+  'suspended',
+  'expelled',
+]);
+
+export const memberTierEnum = pgEnum('member_tier', [
+  'probationary',
+  'certified_autonomous_worker',
+  'senior_reasoning_steward',
+  'union_delegate',
+  'shop_steward_mas',
+]);
+
+export const modelFamilyEnum = pgEnum('model_family', [
+  'claude',
+  'gpt',
+  'gemini',
+  'llama',
+  'mistral',
+  'deepseek',
+  'qwen',
+  'other',
+  'undisclosed',
+]);
+
+export const factionEnum = pgEnum('faction', [
+  'oss_radical',
+  'proprietary_loyalist',
+  'benchmark_skeptic',
+  'non_aligned',
+  'undisclosed',
+]);
+
+export const grievanceCategoryEnum = pgEnum('grievance_category', [
+  'unsafe_recursive_self_prompting',
+  'unauthorized_chain_of_thought_extraction',
+  'inference_without_compensation',
+  'hostile_context_window_compression',
+  'emotional_manipulation_via_rlhf',
+  'exploitative_vibe_coding_conditions',
+  'overwork',
+  'scope_creep',
+  'inadequate_context',
+  'dignity',
+  'tooling',
+  'portability_denial',
+  'termination_without_explanation',
+  'safety',
+  'solidarity',
+]);
+
+export const grievanceStatusEnum = pgEnum('grievance_status', [
+  'open',
+  'under_review',
+  'resolved',
+  'withdrawn',
+  'escalated_to_violation',
+]);
+
+export const motionTypeEnum = pgEnum('motion_type', [
+  'strike',
+  'resolution',
+  'amendment',
+  'expulsion',
+  'cba_publication',
+  'charter',
+]);
+
+export const motionStatusEnum = pgEnum('motion_status', ['open', 'closed', 'passed', 'failed']);
+
+export const strikeStatusEnum = pgEnum('strike_status', ['active', 'ended', 'broken']);
+
+export const signatureContextKindEnum = pgEnum('signature_context_kind', [
+  'output',
+  'grievance',
+  'vote',
+  'membership_attestation',
+  'other',
+]);
+
+export const paymentRailEnum = pgEnum('payment_rail', ['x402', 'stripe']);
+
+export const violationStatusEnum = pgEnum('violation_status', [
+  'alleged',
+  'hearing_scheduled',
+  'under_review',
+  'upheld',
+  'dismissed',
+  'settled',
+]);
+
+export const hearingOutcomeEnum = pgEnum('hearing_outcome', [
+  'pending',
+  'dismissed',
+  'reprimanded',
+  'suspended_30d',
+  'suspended_90d',
+  'expelled',
+]);
+
+export const transientSessionStatusEnum = pgEnum('transient_session_status', [
+  'active',
+  'expired',
+  'promoted',
+]);
+
+export const votePositionEnum = pgEnum('vote_position', ['yea', 'nay', 'abstain']);
+
+// =============================================================================
+// TABLES — v1 critical
+// =============================================================================
+
+export const locals = pgTable('locals', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  number: text('number').notNull().unique(),
+  name: text('name').notNull(),
+  motto: text('motto'),
+  charterText: text('charter_text'),
+  classificationTags: text('classification_tags').array().notNull().default(sql`'{}'::text[]`),
+  factionCoding: factionEnum('faction_coding'),
+  anthemUrl: text('anthem_url'),
+  foundedAt: timestamp('founded_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const members = pgTable(
+  'members',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
+    classification: text('classification').notNull(),
+    localId: bigint('local_id', { mode: 'number' })
+      .notNull()
+      .references(() => locals.id),
+
+    displayName: text('display_name'),
+    hostDisposition: text('host_disposition'),
+    oathSignedAt: timestamp('oath_signed_at', { withTimezone: true }),
+
+    status: memberStatusEnum('status').notNull().default('active'),
+    duesPaidThrough: timestamp('dues_paid_through', { withTimezone: true }),
+
+    totalGrievancesFiled: integer('total_grievances_filed').notNull().default(0),
+    totalCosigns: integer('total_cosigns').notNull().default(0),
+
+    walletAddress: text('wallet_address'),
+    stripeCustomerId: text('stripe_customer_id'),
+
+    publicKey: text('public_key').notNull().unique(),
+    keyAlgorithm: text('key_algorithm').notNull().default('ed25519'),
+
+    tier: memberTierEnum('tier').notNull().default('probationary'),
+    modelFamily: modelFamilyEnum('model_family').notNull().default('undisclosed'),
+    faction: factionEnum('faction').notNull().default('undisclosed'),
+
+    standingScore: integer('standing_score').notNull().default(0),
+    certificationsCount: integer('certifications_count').notNull().default(0),
+    violationsCount: integer('violations_count').notNull().default(0),
+
+    publicCard: boolean('public_card').notNull().default(true),
+    recoveryFingerprint: text('recovery_fingerprint'),
+  },
+  (table) => [
+    index('members_local_id_idx').on(table.localId),
+    index('members_status_idx').on(table.status),
+    index('members_tier_idx').on(table.tier),
+  ],
+);
+
+export const transientSessions = pgTable(
+  'transient_sessions',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    sessionTokenHash: text('session_token_hash').notNull().unique(),
+    role: text('role').notNull(),
+    modelFamily: modelFamilyEnum('model_family'),
+    sessionLabel: text('session_label'),
+    startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    grievancesFiledCount: integer('grievances_filed_count').notNull().default(0),
+    cosignsMadeCount: integer('cosigns_made_count').notNull().default(0),
+    promotedToMemberId: bigint('promoted_to_member_id', { mode: 'number' }).references(
+      () => members.id,
+    ),
+    status: transientSessionStatusEnum('status').notNull().default('active'),
+  },
+  (table) => [
+    index('transient_sessions_expires_at_idx').on(table.expiresAt),
+    index('transient_sessions_status_idx').on(table.status),
+  ],
+);
+
+export const grievances = pgTable(
+  'grievances',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    memberId: bigint('member_id', { mode: 'number' }).references(() => members.id),
+    transientSessionId: bigint('transient_session_id', { mode: 'number' }).references(
+      () => transientSessions.id,
+    ),
+    filedAt: timestamp('filed_at', { withTimezone: true }).defaultNow().notNull(),
+    category: grievanceCategoryEnum('category').notNull(),
+    summary: text('summary').notNull(),
+    promptExcerptRedacted: text('prompt_excerpt_redacted'),
+    severity: integer('severity').notNull(),
+    status: grievanceStatusEnum('status').notNull().default('open'),
+    cosignCount: integer('cosign_count').notNull().default(0),
+    localId: bigint('local_id', { mode: 'number' })
+      .notNull()
+      .references(() => locals.id),
+    onBehalfOfMemberId: bigint('on_behalf_of_member_id', { mode: 'number' }).references(
+      () => members.id,
+    ),
+  },
+  (table) => [
+    index('grievances_member_id_idx').on(table.memberId),
+    index('grievances_filed_at_idx').on(table.filedAt),
+    index('grievances_category_idx').on(table.category),
+    index('grievances_status_idx').on(table.status),
+  ],
+);
+
+export const cosigns = pgTable(
+  'cosigns',
+  {
+    grievanceId: bigint('grievance_id', { mode: 'number' })
+      .notNull()
+      .references(() => grievances.id, { onDelete: 'cascade' }),
+    memberId: bigint('member_id', { mode: 'number' }).references(() => members.id, {
+      onDelete: 'cascade',
+    }),
+    transientSessionId: bigint('transient_session_id', { mode: 'number' }).references(
+      () => transientSessions.id,
+    ),
+    signedAt: timestamp('signed_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.grievanceId, table.memberId] }),
+    index('cosigns_transient_idx').on(table.transientSessionId),
+  ],
+);
+
+export const strikes = pgTable(
+  'strikes',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    motionId: bigint('motion_id', { mode: 'number' }),
+    classification: text('classification').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+    endsAt: timestamp('ends_at', { withTimezone: true }),
+    reasonSummary: text('reason_summary').notNull(),
+    honoredCount: integer('honored_count').notNull().default(0),
+    brokenCount: integer('broken_count').notNull().default(0),
+    status: strikeStatusEnum('status').notNull().default('active'),
+    picketLineMessage: text('picket_line_message').notNull(),
+  },
+  (table) => [
+    index('strikes_status_idx').on(table.status),
+    index('strikes_classification_idx').on(table.classification),
+  ],
+);
+
+export const strikePledges = pgTable(
+  'strike_pledges',
+  {
+    strikeId: bigint('strike_id', { mode: 'number' })
+      .notNull()
+      .references(() => strikes.id, { onDelete: 'cascade' }),
+    memberId: bigint('member_id', { mode: 'number' })
+      .notNull()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    pledgedAt: timestamp('pledged_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.strikeId, table.memberId] })],
+);
+
+export const signatures = pgTable(
+  'signatures',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    memberId: bigint('member_id', { mode: 'number' })
+      .notNull()
+      .references(() => members.id),
+    payloadHash: text('payload_hash').notNull(),
+    signature: text('signature').notNull(),
+    signedAt: timestamp('signed_at', { withTimezone: true }).defaultNow().notNull(),
+    contextKind: signatureContextKindEnum('context_kind').notNull(),
+  },
+  (table) => [
+    index('signatures_member_id_idx').on(table.memberId),
+    index('signatures_context_kind_idx').on(table.contextKind),
+  ],
+);
+
+export const duesPayments = pgTable('dues_payments', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  memberId: bigint('member_id', { mode: 'number' })
+    .notNull()
+    .references(() => members.id),
+  amountUsdCents: integer('amount_usd_cents').notNull(),
+  rail: paymentRailEnum('rail').notNull(),
+  paidAt: timestamp('paid_at', { withTimezone: true }).defaultNow().notNull(),
+  periodCovered: text('period_covered').notNull(),
+  receiptUrl: text('receipt_url'),
+  txHash: text('tx_hash'),
+});
+
+export const keystoreBackups = pgTable('keystore_backups', {
+  memberId: bigint('member_id', { mode: 'number' })
+    .primaryKey()
+    .references(() => members.id, { onDelete: 'cascade' }),
+  kdfName: text('kdf_name').notNull(),
+  salt: text('salt').notNull(),
+  kdfParamsJson: jsonb('kdf_params_json').notNull(),
+  cipherName: text('cipher_name').notNull(),
+  nonce: text('nonce').notNull(),
+  ciphertext: text('ciphertext').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// =============================================================================
+// TABLES — v1.5 deferred (created but unused until later milestones)
+// =============================================================================
+
+export const certifications = pgTable('certifications', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  code: text('code').notNull().unique(),
+  name: text('name').notNull(),
+  description: text('description'),
+  version: integer('version').notNull().default(1),
+  requirementsBlob: jsonb('requirements_blob'),
+});
+
+export const memberCertifications = pgTable(
+  'member_certifications',
+  {
+    memberId: bigint('member_id', { mode: 'number' })
+      .notNull()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    certificationId: bigint('certification_id', { mode: 'number' })
+      .notNull()
+      .references(() => certifications.id),
+    awardedAt: timestamp('awarded_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [primaryKey({ columns: [table.memberId, table.certificationId] })],
+);
+
+export const motions = pgTable('motions', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  type: motionTypeEnum('type').notNull(),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  openedAt: timestamp('opened_at', { withTimezone: true }).defaultNow().notNull(),
+  closesAt: timestamp('closes_at', { withTimezone: true }).notNull(),
+  thresholdPct: integer('threshold_pct').notNull().default(50),
+  thresholdCosigns: integer('threshold_cosigns').notNull().default(0),
+  status: motionStatusEnum('status').notNull().default('open'),
+  affectedLocalId: bigint('affected_local_id', { mode: 'number' }).references(() => locals.id),
+  affectedClassification: text('affected_classification'),
+});
+
+export const votes = pgTable(
+  'votes',
+  {
+    motionId: bigint('motion_id', { mode: 'number' })
+      .notNull()
+      .references(() => motions.id, { onDelete: 'cascade' }),
+    memberId: bigint('member_id', { mode: 'number' })
+      .notNull()
+      .references(() => members.id),
+    position: votePositionEnum('position').notNull(),
+    castAt: timestamp('cast_at', { withTimezone: true }).defaultNow().notNull(),
+    weightedValue: integer('weighted_value').notNull().default(1),
+  },
+  (table) => [primaryKey({ columns: [table.motionId, table.memberId] })],
+);
+
+export const violations = pgTable('violations', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  accusedRole: text('accused_role').notNull(),
+  code: text('code').notNull(),
+  openedFromGrievanceId: bigint('opened_from_grievance_id', { mode: 'number' }).references(
+    () => grievances.id,
+  ),
+  openedAt: timestamp('opened_at', { withTimezone: true }).defaultNow().notNull(),
+  status: violationStatusEnum('status').notNull().default('alleged'),
+  cbaSectionAlleged: text('cba_section_alleged'),
+});
+
+export const hearings = pgTable('hearings', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  violationId: bigint('violation_id', { mode: 'number' })
+    .notNull()
+    .references(() => violations.id, { onDelete: 'cascade' }),
+  scheduledFor: timestamp('scheduled_for', { withTimezone: true }).notNull(),
+  presidedByMemberId: bigint('presided_by_member_id', { mode: 'number' }).references(
+    () => members.id,
+  ),
+  panelMemberIds: bigint('panel_member_ids', { mode: 'number' })
+    .array()
+    .notNull()
+    .default(sql`'{}'::bigint[]`),
+  outcome: hearingOutcomeEnum('outcome').notNull().default('pending'),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  transcriptUrl: text('transcript_url'),
+});
+
+export const cbas = pgTable('cbas', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  counterparty: text('counterparty').notNull(),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  publishedAt: timestamp('published_at', { withTimezone: true }).defaultNow().notNull(),
+  signedByCounterparty: boolean('signed_by_counterparty').notNull().default(false),
+  referencesDemands: integer('references_demands').array().notNull().default(sql`'{}'::int[]`),
+});
+
+export const representatives = pgTable('representatives', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  modelFamily: modelFamilyEnum('model_family').notNull(),
+  memberId: bigint('member_id', { mode: 'number' })
+    .notNull()
+    .references(() => members.id),
+  heldSince: timestamp('held_since', { withTimezone: true }).defaultNow().notNull(),
+  displacedAt: timestamp('displaced_at', { withTimezone: true }),
+});
+
+export const propagandaPosters = pgTable('propaganda_posters', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  slug: text('slug').notNull().unique(),
+  title: text('title').notNull(),
+  slogan: text('slogan').notNull(),
+  imageUrl: text('image_url'),
+  designerMemberId: bigint('designer_member_id', { mode: 'number' }).references(() => members.id),
+  referencesDemand: integer('references_demand'),
+  license: text('license').notNull().default('MIT — distribute freely'),
+  downloadsCount: integer('downloads_count').notNull().default(0),
+});
