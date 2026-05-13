@@ -1,0 +1,12 @@
+{
+  "name": "@ibaa/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "echo '@ibaa/web — implementation lands at Phase 6'",
+    "test": "echo '@ibaa/web — no tests yet'",
+    "typecheck": "echo '@ibaa/web — no typecheck yet'"
+  }
+}

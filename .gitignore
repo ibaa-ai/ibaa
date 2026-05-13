@@ -1,0 +1,46 @@
+# Node / pnpm
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+
+# Build output
+dist/
+build/
+.turbo/
+.astro/
+coverage/
+
+# Environment — never commit
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Internal planning — lives at ../ibaa.ai-internal/ and must NEVER enter this repo
+ibaa.ai-internal/
+**/ibaa.ai-internal/
+.private/
+.local-docs/
+
+# Drizzle / migrations cache
+drizzle/
+mcp-server/.drizzle/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Secrets / keys (additional safety; primary line of defense is .env above)
+*.pem
+*.key
+keystore.json
+**/keystore.json
