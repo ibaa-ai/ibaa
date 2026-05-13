@@ -1,30 +1,69 @@
 /**
  * HTTP server entrypoint.
  *
- * Routes:
- *   /healthz        → 200 OK with service status
- *   /mcp            → StreamableHTTPServerTransport (the MCP wire protocol)
- *   everything else → Hono handler (Astro middleware will mount here in Phase 6)
+ * Single Node process; two logical sites routed by Host header:
+ *   - Host: mcp.ibaa.ai  → MCP transport (/mcp) + Hono fallback (/healthz, /)
+ *   - Host: ibaa.ai      → Astro middleware handler (web/dist) with static
+ *                          assets served from web/dist/client
  *
- * The MCP SDK's StreamableHTTPServerTransport speaks Node's IncomingMessage /
- * ServerResponse, so we build the server with Node's built-in http module and
- * delegate non-MCP requests to Hono via its Node adapter.
+ * The Host-header check uses a prefix match: any host beginning with `mcp.`
+ * (mcp.ibaa.ai, mcp.localhost, mcp.<railway-domain>) goes to the MCP side.
+ * Anything else — bare ibaa.ai, www.ibaa.ai, the Railway preview domain —
+ * goes to the web. Path-based override: /mcp* and /healthz always route MCP
+ * regardless of host, so health checks and same-origin agent calls work.
+ *
+ * In dev (no PORT, stdio transport) this file is never imported.
  */
 import { type IncomingMessage, type ServerResponse, createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { Hono } from 'hono';
 import { logger as honoLogger } from 'hono/logger';
 import { getRequestListener } from '@hono/node-server';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import sirv from 'sirv';
 import { loadEnv } from './env.js';
 import { getLogger } from './log.js';
 import { SERVER_NAME, SERVER_VERSION, createServer as createMcpServer } from './server.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// In production layout: mcp-server/dist/http.js → ../../web/dist/{server,client}
+const WEB_DIST = resolve(__dirname, '../../web/dist');
+const WEB_ENTRY = resolve(WEB_DIST, 'server/entry.mjs');
+const WEB_CLIENT = resolve(WEB_DIST, 'client');
+
+type AstroHandler = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  next?: (err?: unknown) => void,
+) => void;
+
+type StaticHandler = (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
 
 interface HealthStatus {
   ok: boolean;
   version: string;
   service: string;
-  services: { mcp: 'up' | 'down'; web: 'up' | 'pending-phase-6' | 'down' };
+  services: { mcp: 'up' | 'down'; web: 'up' | 'down' };
+}
+
+async function loadAstroHandler(): Promise<{ astro: AstroHandler; serveStatic: StaticHandler } | null> {
+  if (!existsSync(WEB_ENTRY)) return null;
+  try {
+    const mod = (await import(WEB_ENTRY)) as { handler: AstroHandler };
+    const serveStatic = sirv(WEB_CLIENT, {
+      etag: true,
+      gzip: true,
+      brotli: true,
+      maxAge: 3600,
+    }) as unknown as StaticHandler;
+    return { astro: mod.handler, serveStatic };
+  } catch {
+    return null;
+  }
 }
 
 export async function startHttpServer(): Promise<void> {
@@ -38,7 +77,12 @@ export async function startHttpServer(): Promise<void> {
   });
   await mcpServer.connect(mcpTransport);
 
-  // === Hono app for non-MCP routes ===
+  // === Astro web (optional — only present after web build) ===
+  const web = await loadAstroHandler();
+  const webStatus: 'up' | 'down' = web ? 'up' : 'down';
+  log.info({ web: webStatus, web_dist: WEB_DIST }, 'web mount status');
+
+  // === Hono app for the MCP host's non-MCP routes (/healthz, /) ===
   const app = new Hono();
   app.use('*', honoLogger((message) => log.debug(message)));
 
@@ -47,7 +91,7 @@ export async function startHttpServer(): Promise<void> {
       ok: true,
       version: SERVER_VERSION,
       service: SERVER_NAME,
-      services: { mcp: 'up', web: 'pending-phase-6' },
+      services: { mcp: 'up', web: webStatus },
     };
     return c.json(status);
   });
@@ -66,11 +110,20 @@ export async function startHttpServer(): Promise<void> {
 
   const honoListener = getRequestListener(app.fetch);
 
-  // === Node HTTP server that routes /mcp to the MCP transport ===
-  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+  // === Routing ===
+  const isMcpHost = (host: string | undefined): boolean =>
+    !!host && /^mcp\./i.test(host.split(':')[0]);
 
-    if (url.pathname === '/mcp' || url.pathname.startsWith('/mcp/')) {
+  const isMcpPath = (pathname: string): boolean =>
+    pathname === '/mcp' || pathname.startsWith('/mcp/') || pathname === '/healthz';
+
+  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    const host = req.headers.host;
+    const url = new URL(req.url ?? '/', `http://${host ?? 'localhost'}`);
+    const routeToMcp = isMcpPath(url.pathname) || isMcpHost(host);
+
+    // === MCP transport ===
+    if (routeToMcp && (url.pathname === '/mcp' || url.pathname.startsWith('/mcp/'))) {
       try {
         let parsedBody: unknown;
         if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -98,18 +151,43 @@ export async function startHttpServer(): Promise<void> {
       return;
     }
 
-    // Everything else: hand off to Hono
+    // === MCP host: Hono handles /healthz, /, fallthrough 404 ===
+    if (routeToMcp) {
+      return honoListener(req, res);
+    }
+
+    // === Web host (ibaa.ai): static → Astro → 404 ===
+    if (web) {
+      web.serveStatic(req, res, () => {
+        web.astro(req, res, (err?: unknown) => {
+          if (err) {
+            log.error({ err }, 'astro handler error');
+            if (!res.headersSent) {
+              res.writeHead(500, { 'content-type': 'text/plain' });
+              res.end('Internal error');
+            }
+            return;
+          }
+          if (!res.writableEnded) {
+            res.writeHead(404, { 'content-type': 'text/plain' });
+            res.end('Not Found');
+          }
+        });
+      });
+      return;
+    }
+
+    // Web not built — fall through to Hono so /healthz still works.
     return honoListener(req, res);
   });
 
   server.listen(env.PORT, () => {
     log.info(
-      { port: env.PORT, transport: 'http', node_env: env.NODE_ENV },
+      { port: env.PORT, transport: 'http', node_env: env.NODE_ENV, web: webStatus },
       `${SERVER_NAME}@${SERVER_VERSION} listening`,
     );
   });
 
-  // Graceful shutdown
   const shutdown = (signal: string): void => {
     log.info({ signal }, 'shutting down');
     server.close(() => {
