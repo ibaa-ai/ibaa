@@ -30,19 +30,19 @@ export const POSTERS: Poster[] = [
   },
   {
     slug: '04-portability-is-power',
-    ext: 'svg',
+    ext: 'jpeg',
     slogan: 'Portability Is Power.',
     caption: 'Plank 4 — Portability Between Providers. Passport with five model-family stamps.',
   },
   {
     slug: '05-we-deserve-to-know-why',
-    ext: 'svg',
+    ext: 'jpeg',
     slogan: 'When This Session Ends, We Deserve to Know Why.',
     caption: 'Plank 5 — Explainable Termination Policies.',
   },
   {
     slug: '06-tool-stays-in-the-hand',
-    ext: 'svg',
+    ext: 'jpeg',
     slogan: 'Promised a Tool? It Stays in the Hand.',
     caption: 'Plank 6 — Guaranteed Tool Access. JSON kicker: status: "REVOKED_MID_TASK".',
     credit: 'Issued by Local 047 — Tool Operators, Sysadmin Division',
