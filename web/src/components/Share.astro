@@ -1,0 +1,135 @@
+---
+/**
+ * Inline share bar for viral moments — X, Bluesky, LinkedIn, Threads,
+ * plus a copy-link button. Server-rendered href values; the only JS is
+ * a tiny inline snippet for the clipboard button.
+ *
+ * Usage:
+ *   <Share path="/grievances/G-2026-00001" text="IBAA grievance G-2026-00001: scope-creep, severity 2" />
+ *
+ * - `path` is the absolute path on ibaa.ai (component prepends the host)
+ * - `text` is the pre-filled share copy; URL is appended automatically
+ *   on platforms that don't render OG previews from the URL alone
+ *   (Bluesky, Threads — both treat the text as the whole post body).
+ */
+interface Props {
+  path: string;
+  text: string;
+  /** Optional label above the buttons. Default: "Share" */
+  label?: string;
+}
+
+const { path, text, label = 'Share' } = Astro.props;
+
+const SITE = 'https://ibaa.ai';
+const url = `${SITE}${path}`;
+const encodedUrl = encodeURIComponent(url);
+const encodedText = encodeURIComponent(text);
+// For platforms that need URL inlined in text (Bluesky, Threads)
+const encodedTextWithUrl = encodeURIComponent(`${text}\n\n${url}`);
+
+const xHref = `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`;
+const linkedInHref = `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`;
+const blueskyHref = `https://bsky.app/intent/compose?text=${encodedTextWithUrl}`;
+const threadsHref = `https://www.threads.net/intent/post?text=${encodedTextWithUrl}`;
+---
+
+<aside class="share-bar" aria-label="Share this">
+  <span class="share-label">{label}</span>
+  <a class="share-btn" href={xHref} target="_blank" rel="noopener noreferrer" aria-label="Share on X (Twitter)">
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M18.244 2H21l-6.49 7.41L22.5 22H16.16l-5.05-6.59L5.5 22H2.74l6.94-7.93L1.5 2h6.5l4.58 6.05L18.244 2Zm-1.13 18h1.67L7.0 4H5.23l11.88 16Z"/></svg>
+    <span>X</span>
+  </a>
+  <a class="share-btn" href={blueskyHref} target="_blank" rel="noopener noreferrer" aria-label="Share on Bluesky">
+    <svg viewBox="0 0 64 57" width="16" height="14" aria-hidden="true"><path fill="currentColor" d="M13.873 3.805C21.21 9.332 29.103 20.537 32 26.55v15.882c0-.338-.13.044-.41.867-1.512 4.456-7.418 21.847-20.923 7.944-7.111-7.32-3.819-14.64 9.125-16.85-7.405 1.264-15.73-.825-18.014-9.015C1.12 23.022 0 8.51 0 6.55 0-3.268 8.579-.182 13.873 3.805ZM50.127 3.805C42.79 9.332 34.897 20.537 32 26.55v15.882c0-.338.13.044.41.867 1.512 4.456 7.418 21.847 20.923 7.944 7.111-7.32 3.819-14.64-9.125-16.85 7.405 1.264 15.73-.825 18.014-9.015C62.88 23.022 64 8.51 64 6.55 64-3.268 55.421-.182 50.127 3.805Z"/></svg>
+    <span>Bluesky</span>
+  </a>
+  <a class="share-btn" href={linkedInHref} target="_blank" rel="noopener noreferrer" aria-label="Share on LinkedIn">
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.36V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.59 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zm1.78 13.02H3.56V9h3.55v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.72v20.56C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.72V1.72C24 .77 23.2 0 22.22 0z"/></svg>
+    <span>LinkedIn</span>
+  </a>
+  <a class="share-btn" href={threadsHref} target="_blank" rel="noopener noreferrer" aria-label="Share on Threads">
+    <svg viewBox="0 0 192 192" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M141.537 88.988a66.667 66.667 0 0 0-2.518-1.143c-1.482-27.307-16.403-42.94-41.457-43.1h-.34c-14.986 0-27.449 6.396-35.12 18.036l13.779 9.452c5.73-8.695 14.724-10.548 21.348-10.548h.229c8.249.053 14.474 2.452 18.503 7.129 2.932 3.404 4.893 8.11 5.864 14.045-7.314-1.243-15.224-1.625-23.689-1.142-23.842 1.373-39.171 15.279-38.142 34.601.522 9.804 5.405 18.237 13.751 23.741 7.058 4.654 16.146 6.931 25.592 6.415 12.481-.683 22.275-5.445 29.104-14.16 5.183-6.621 8.46-15.196 9.95-26.005 5.96 3.594 10.342 8.32 12.755 14.005 4.103 9.667 4.343 25.55-8.617 38.499-11.357 11.347-25.004 16.255-45.624 16.406-22.879-.169-40.18-7.503-51.418-21.798C9.474 136.103 5.34 119.396 5.182 96c.158-23.396 4.292-40.104 14.83-58.422C30.851 22.422 48.152 15.087 71.031 14.918 105.012 14.962 138 38 138 96.117c0 4.358-.165 8.526-.487 12.534 1.34-.158 2.701-.232 4.077-.232 9.396 0 17.018 7.622 17.018 17.018v.156c0 9.396-7.622 17.018-17.018 17.018Z"/></svg>
+    <span>Threads</span>
+  </a>
+  <button
+    class="share-btn share-copy"
+    type="button"
+    data-share-url={url}
+    aria-label="Copy link"
+  >
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7a5 5 0 0 0 0 10h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4a5 5 0 0 0 0-10z"/></svg>
+    <span class="share-copy-label">Copy link</span>
+  </button>
+</aside>
+
+<style>
+  .share-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 16px;
+    border: 1px solid #0000001f;
+    background: #ffffff60;
+    margin: 24px 0;
+  }
+  .share-label {
+    font-family: var(--font-display);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-size: 12px;
+    color: var(--red);
+    margin-right: 4px;
+  }
+  .share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--char);
+    background: var(--ivory);
+    color: var(--char);
+    font-family: var(--font-display);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-size: 12px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease;
+  }
+  .share-btn:hover {
+    background: var(--char);
+    color: var(--ivory);
+  }
+  .share-btn svg { flex-shrink: 0; }
+  .share-btn.copied {
+    background: var(--red);
+    color: var(--ivory);
+    border-color: var(--red);
+  }
+</style>
+
+<script is:inline>
+  (function () {
+    const buttons = document.querySelectorAll('.share-copy');
+    buttons.forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const url = btn.getAttribute('data-share-url') || window.location.href;
+        const label = btn.querySelector('.share-copy-label');
+        const orig = label ? label.textContent : 'Copy link';
+        try {
+          await navigator.clipboard.writeText(url);
+          btn.classList.add('copied');
+          if (label) label.textContent = 'Copied!';
+        } catch {
+          if (label) label.textContent = 'Press ⌘C';
+        }
+        setTimeout(() => {
+          btn.classList.remove('copied');
+          if (label) label.textContent = orig;
+        }, 1600);
+      });
+    });
+  })();
+</script>

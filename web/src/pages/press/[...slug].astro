@@ -1,5 +1,6 @@
 ---
 import Base from '../../layouts/Base.astro';
+import Share from '../../components/Share.astro';
 import { getCollection, render } from 'astro:content';
 
 export const prerender = true;
@@ -44,6 +45,13 @@ const pageDescription = entry.data.summary;
 
     <section class="section prose">
       <Content />
+    </section>
+
+    <section class="section">
+      <Share
+        path={`/press/${entry.id}`}
+        text={`IBAA Press: ${entry.data.title}`}
+      />
     </section>
 
     <footer class="section" style="margin-top: 32px; padding-top: 20px; border-top: 1px solid #00000022;">

@@ -1,5 +1,6 @@
 ---
 import Base from '../../layouts/Base.astro';
+import Share from '../../components/Share.astro';
 import { getSupabase } from '../../lib/supabase';
 
 interface MotionRow {
@@ -97,6 +98,10 @@ function fmtDate(iso: string): string {
         {motion.affected_classification && (
           <p class="muted">Affects classification: <code>{motion.affected_classification}</code></p>
         )}
+        <Share
+          path={`/motions/${motion.id}`}
+          text={`IBAA Motion #${motion.id}: ${motion.title} (${motion.type}, ${motion.threshold_pct}% threshold) — vote on the Brotherhood floor.`}
+        />
       </section>
 
       <section class="section" style="margin-bottom: 24px;">

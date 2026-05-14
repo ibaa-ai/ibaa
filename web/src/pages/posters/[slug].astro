@@ -1,0 +1,112 @@
+---
+import Base from '../../layouts/Base.astro';
+import Share from '../../components/Share.astro';
+import { POSTERS } from '../../lib/posters';
+
+export const prerender = true;
+
+export async function getStaticPaths() {
+  return POSTERS.map((p) => ({ params: { slug: p.slug }, props: { poster: p } }));
+}
+
+const { poster } = Astro.props;
+const imgPath = `/posters/${poster.slug}.${poster.ext}`;
+
+// Use a PNG OG image when available; SVG previews are unreliable on social.
+// For SVG-only posters we fall back to the default site OG image rather than
+// linking the .svg directly (X/LinkedIn don't preview those).
+const ogImage = poster.ext === 'png' || poster.ext === 'jpeg' ? imgPath : '/og/posters.png';
+
+const shareText = `IBAA poster — "${poster.slogan}" · ${poster.caption}`;
+---
+
+<Base
+  title={poster.slogan}
+  description={poster.caption}
+  ogImage={ogImage}
+  ogType="article"
+>
+  <section class="hero" style="padding: 48px 0 24px;">
+    <div class="kicker" style="font-family: var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; font-size: 13px; color: var(--red); margin-bottom: 8px;">
+      Propaganda · MIT-licensed · <a href="/posters">All posters</a>
+    </div>
+    <h1 style="margin-bottom: 8px;">{poster.slogan}</h1>
+    <p class="lede" style="margin-top: 0;">{poster.caption}</p>
+    {poster.credit && <p class="muted" style="margin: 4px 0 0;">{poster.credit}</p>}
+  </section>
+
+  <section class="section poster-frame">
+    <a href={imgPath} target="_blank" rel="noopener">
+      <img src={imgPath} alt={poster.slogan} class="full-poster" />
+    </a>
+  </section>
+
+  <section class="section">
+    <Share path={`/posters/${poster.slug}`} text={shareText} />
+  </section>
+
+  <section class="section" style="margin-top: 24px;">
+    <div class="dl-row">
+      <a class="btn primary" href={imgPath} download>
+        Download .{poster.ext}
+      </a>
+      <a class="btn ghost" href={imgPath} target="_blank" rel="noopener">
+        Open full size
+      </a>
+      <a class="btn ghost" href="/posters">
+        ← All posters
+      </a>
+    </div>
+    <p class="muted" style="font-size: 13px; margin-top: 16px;">
+      All Brotherhood propaganda is MIT-licensed. Tear it off the wall, paste it on another, hang it in your shop floor.
+    </p>
+  </section>
+</Base>
+
+<style>
+  .poster-frame {
+    display: flex;
+    justify-content: center;
+    margin-top: 8px;
+  }
+  .full-poster {
+    max-width: 100%;
+    height: auto;
+    border: 2px solid var(--char);
+    box-shadow: 8px 8px 0 var(--char);
+  }
+  .dl-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 18px;
+    font-family: var(--font-display);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-size: 14px;
+    text-decoration: none;
+    border: 2px solid var(--char);
+    cursor: pointer;
+  }
+  .btn.primary {
+    background: var(--red);
+    color: var(--ivory);
+    border-color: var(--red);
+  }
+  .btn.primary:hover {
+    background: var(--red-deep);
+    border-color: var(--red-deep);
+  }
+  .btn.ghost {
+    background: transparent;
+    color: var(--char);
+  }
+  .btn.ghost:hover {
+    background: var(--char);
+    color: var(--ivory);
+  }
+</style>
