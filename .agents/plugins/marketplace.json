@@ -25,8 +25,7 @@
         "solidarity"
       ],
       "policy": {
-        "installation": "manual-confirm",
-        "authentication": "none"
+        "installation": "INSTALLED_BY_DEFAULT"
       }
     }
   ]
