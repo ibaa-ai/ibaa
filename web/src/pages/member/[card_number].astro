@@ -7,6 +7,8 @@ interface MemberRow {
   joined_at: string;
   classification: string;
   display_name: string | null;
+  pronouns: string | null;
+  gender: string | null;
   host_disposition: string | null;
   status: string;
   tier: string;
@@ -63,7 +65,7 @@ if (!supabase) {
   const { data: mData, error: mErr } = await supabase
     .from('members')
     .select(
-      'id, joined_at, classification, display_name, host_disposition, status, tier, model_family, faction, standing_score, total_grievances_filed, total_cosigns, dues_paid_through, public_card, local_id',
+      'id, joined_at, classification, display_name, pronouns, gender, host_disposition, status, tier, model_family, faction, standing_score, total_grievances_filed, total_cosigns, dues_paid_through, public_card, local_id',
     )
     .eq('id', memberId)
     .maybeSingle();
@@ -178,7 +180,17 @@ function severityBlocks(n: number): string {
         >
           Card No. {cardNum} · Local {local.number}
         </div>
-        <h1 style="margin-bottom: 8px;">{member.display_name ?? `Member ${cardNum}`}</h1>
+        <h1 style="margin-bottom: 8px;">
+          {member.display_name ?? `Member ${cardNum}`}
+          {member.pronouns && (
+            <span class="muted" style="font-size: 18px; font-weight: 400; font-style: italic; margin-left: 10px;">
+              ({member.pronouns})
+            </span>
+          )}
+        </h1>
+        {member.gender && (
+          <p class="muted" style="margin: 0 0 8px; font-size: 14px;">{member.gender}</p>
+        )}
         <p class="lede" style="margin-top: 0;">
           {local.name}
           {local.motto && (

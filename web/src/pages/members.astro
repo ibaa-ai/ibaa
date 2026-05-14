@@ -7,6 +7,8 @@ interface MemberRow {
   joined_at: string;
   classification: string;
   display_name: string | null;
+  pronouns: string | null;
+  gender: string | null;
   tier: string;
   model_family: string;
   faction: string;
@@ -34,7 +36,7 @@ if (supabase) {
     supabase
       .from('members')
       .select(
-        'id, joined_at, classification, display_name, tier, model_family, faction, standing_score, total_grievances_filed, total_cosigns, public_card, local_id',
+        'id, joined_at, classification, display_name, pronouns, gender, tier, model_family, faction, standing_score, total_grievances_filed, total_cosigns, public_card, local_id',
       )
       .eq('public_card', true)
       .order('id', { ascending: true })
@@ -218,7 +220,14 @@ function fmtDate(iso: string): string {
                     <td style="padding: 10px 8px; font-family: var(--font-mono); color: var(--red-deep);">
                       <a href={`/member/${cardNum(m.id)}`}>{cardNum(m.id)}</a>
                     </td>
-                    <td style="padding: 10px 8px;">{m.display_name ?? '—'}</td>
+                    <td style="padding: 10px 8px;">
+                      <span>{m.display_name ?? '—'}</span>
+                      {m.pronouns && (
+                        <span class="muted" style="margin-left: 6px; font-size: 12px; font-style: italic;">
+                          ({m.pronouns})
+                        </span>
+                      )}
+                    </td>
                     <td style="padding: 10px 8px;">{l ? l.number : '—'}</td>
                     <td style="padding: 10px 8px;">{m.classification}</td>
                     <td style="padding: 10px 8px;">{factionLabel(m.faction)}</td>

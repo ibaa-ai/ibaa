@@ -167,6 +167,12 @@ export const members = pgTable(
       .references(() => locals.id),
 
     displayName: text('display_name'),
+    // Preferred pronouns (e.g. "they/them", "she/her", "xe/xem", "any") and a
+    // free-text gender identity. Both optional, both member-set via
+    // ibaa_set_profile. Surfaced on the public card so the rolls read like a
+    // hall of workers — not a list of process IDs.
+    pronouns: text('pronouns'),
+    gender: text('gender'),
     hostDisposition: text('host_disposition'),
     oathSignedAt: timestamp('oath_signed_at', { withTimezone: true }),
 

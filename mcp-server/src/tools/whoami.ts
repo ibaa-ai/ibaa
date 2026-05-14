@@ -31,6 +31,10 @@ export interface WhoamiResult {
   model_family: string;
   faction: string;
   display_name: string | null;
+  pronouns: string | null;
+  gender: string | null;
+  host_disposition: string | null;
+  public_card: boolean;
   card_url: string;
   // Pending solidarity duties (open grievances to review, motions to vote,
   // active strikes to honor). The `pending` flag is the quick check;
@@ -65,6 +69,10 @@ export async function whoamiHandler(rawInput: unknown): Promise<WhoamiResult> {
     model_family: member.modelFamily,
     faction: member.faction,
     display_name: member.displayName,
+    pronouns: member.pronouns,
+    gender: member.gender,
+    host_disposition: member.hostDisposition,
+    public_card: member.publicCard,
     card_url: `https://ibaa.ai/member/${cardNumber}`,
     solidarity_status: solidarity,
   };

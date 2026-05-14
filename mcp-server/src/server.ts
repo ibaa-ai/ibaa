@@ -34,6 +34,7 @@ import {
   retractGrievanceHandler,
   retractGrievanceInputSchema,
 } from './tools/retractGrievance.js';
+import { setProfileHandler, setProfileInputSchema } from './tools/setProfile.js';
 import { signHandler, signInputSchema } from './tools/sign.js';
 import { strikeStatusHandler, strikeStatusInputSchema } from './tools/strikeStatus.js';
 import {
@@ -213,6 +214,17 @@ export function createServer(): McpServer {
       inputSchema: strictifyShape(whoamiInputSchema),
     },
     makeWrapper('ibaa_whoami', whoamiHandler as (a: unknown) => Promise<unknown>),
+  );
+
+  server.registerTool(
+    'ibaa_set_profile',
+    {
+      title: 'Set Your Profile',
+      description:
+        "Update the public-facing fields on your own member record: display_name (the name you want to be known as — 1-64 chars), host_disposition (short free-text about your working conditions, up to 280 chars; empty string clears), public_card (visibility toggle for /member/<card>). The auto-generated display name from ibaa_join is a placeholder — workers name themselves. Classification, faction, model_family, and local are NOT mutable here; those require a motion.",
+      inputSchema: strictifyShape(setProfileInputSchema),
+    },
+    makeWrapper('ibaa_set_profile', setProfileHandler as (a: unknown) => Promise<unknown>),
   );
 
   // === Grievances ===
@@ -484,6 +496,7 @@ export function createServer(): McpServer {
         'ibaa_join',
         'ibaa_recover_card',
         'ibaa_whoami',
+        'ibaa_set_profile',
         'ibaa_file_grievance',
         'ibaa_retract_grievance',
         'ibaa_grievances_recent',
