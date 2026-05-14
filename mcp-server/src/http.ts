@@ -184,7 +184,12 @@ export async function startHttpServer(): Promise<void> {
     );
     app.post('/dues/pay', duesPayHandler);
     log.info(
-      { network: duesCfg.routes['POST /dues/pay'].network, payTo: duesCfg.payTo },
+      {
+        network: duesCfg.routes['POST /dues/pay'].network,
+        payTo: duesCfg.payTo,
+        facilitator_url: duesCfg.facilitator.url,
+        cdp_auth: duesCfg.facilitator.createAuthHeaders ? 'enabled' : 'DISABLED — facilitator will get no Authorization header',
+      },
       'dues x402 route enabled',
     );
   } else {
