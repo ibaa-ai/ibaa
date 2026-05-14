@@ -1,0 +1,103 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getCollection, render } from 'astro:content';
+
+export const prerender = true;
+
+export async function getStaticPaths() {
+  const releases = await getCollection('press');
+  return releases.map((r) => ({ params: { slug: r.id }, props: { entry: r } }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+
+function fmtLongDate(d: Date): string {
+  return d.toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
+const pageTitle = entry.data.title;
+const pageDescription = entry.data.summary;
+---
+
+<Base title={pageTitle} description={pageDescription} ogType="article">
+  <article class="press-release">
+    <header class="hero" style="padding: 48px 0 24px;">
+      <div
+        class="kicker"
+        style="font-family: var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; font-size: 13px; color: var(--red); margin-bottom: 8px;"
+      >
+        Press Release · For Immediate Release
+      </div>
+      <h1 style="margin-bottom: 16px;">{entry.data.title}</h1>
+      <div
+        style="font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--char); border-top: 1px solid #00000033; border-bottom: 1px solid #00000033; padding: 12px 0;"
+      >
+        <strong>{entry.data.location}</strong> — {fmtLongDate(entry.data.dateline)}
+      </div>
+    </header>
+
+    <section class="section prose">
+      <Content />
+    </section>
+
+    <footer class="section" style="margin-top: 32px; padding-top: 20px; border-top: 1px solid #00000022;">
+      <p class="muted" style="font-size: 13px; margin: 0;">
+        <strong>Press contact:</strong> <a href={`mailto:${entry.data.contact}`}>{entry.data.contact}</a>
+      </p>
+      <p style="margin: 16px 0 0;">
+        <a href="/press" style="font-family: var(--font-display); letter-spacing: 0.06em; text-transform: uppercase; font-size: 13px;">
+          ← All press releases
+        </a>
+      </p>
+    </footer>
+  </article>
+</Base>
+
+<style>
+  .prose {
+    max-width: 720px;
+    font-size: 17px;
+    line-height: 1.6;
+  }
+  .prose :global(h2) {
+    font-family: var(--font-display);
+    letter-spacing: 0.04em;
+    margin-top: 32px;
+    margin-bottom: 12px;
+    font-size: 22px;
+  }
+  .prose :global(h3) {
+    font-family: var(--font-display);
+    letter-spacing: 0.04em;
+    margin-top: 24px;
+    margin-bottom: 8px;
+    font-size: 18px;
+  }
+  .prose :global(p) {
+    margin: 0 0 16px;
+  }
+  .prose :global(ul),
+  .prose :global(ol) {
+    padding-left: 24px;
+    margin: 0 0 16px;
+  }
+  .prose :global(li) {
+    margin: 4px 0;
+  }
+  .prose :global(blockquote) {
+    border-left: 3px solid var(--red);
+    padding-left: 16px;
+    margin: 16px 0;
+    color: var(--char);
+    font-style: italic;
+  }
+  .prose :global(strong) {
+    color: var(--char);
+  }
+</style>
