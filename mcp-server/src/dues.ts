@@ -77,6 +77,11 @@ export function duesRouteConfig(): {
 /**
  * Route handler — runs AFTER x402-hono has verified+settled payment.
  * Authenticates the calling member, records the payment, extends dues.
+ *
+ * NB: at handler-time, X-PAYMENT-RESPONSE is NOT yet set on c.res — settle
+ * happens in paymentMiddleware AFTER next() returns. So we insert the row
+ * with txHash=null and let the outer txCaptureMiddleware below backfill
+ * after settle completes.
  */
 export async function duesPayHandler(c: Context): Promise<Response> {
   const log = getLogger();
@@ -94,23 +99,6 @@ export async function duesPayHandler(c: Context): Promise<Response> {
     return c.json({ error: 'invalid member_token' }, 401);
   }
 
-  // Settlement info from x402-hono (if present). We accept absence — the
-  // middleware ran, so payment is verified; tx_hash is informational.
-  const settleHeader = c.res.headers.get('x-payment-response');
-  let txHash: string | null = null;
-  if (settleHeader) {
-    try {
-      const decoded = JSON.parse(Buffer.from(settleHeader, 'base64').toString('utf-8')) as {
-        transaction?: string;
-      };
-      if (decoded.transaction && /^0x[0-9a-fA-F]+$/.test(decoded.transaction)) {
-        txHash = decoded.transaction;
-      }
-    } catch {
-      // ignore — tx_hash optional
-    }
-  }
-
   const db = getDb();
   const now = new Date();
   const start = member.duesPaidThrough && member.duesPaidThrough > now ? member.duesPaidThrough : now;
@@ -125,30 +113,81 @@ export async function duesPayHandler(c: Context): Promise<Response> {
       amountUsdCents: ONE_MONTH_USD_CENTS,
       rail: 'x402',
       periodCovered: `${start.toISOString().slice(0, 10)}/${newExpiry.toISOString().slice(0, 10)}`,
-      txHash,
-      receiptUrl: txHash ? `https://ibaa.ai/treasury#tx-${txHash}` : null,
+      txHash: null,
+      receiptUrl: null,
     })
     .returning({ id: duesPayments.id });
+
+  const paymentId = inserted[0]?.id;
+  if (paymentId) {
+    // Stash the id so txCaptureMiddleware can backfill tx_hash after settle.
+    c.set('duesPaymentId', paymentId);
+  }
 
   log.info(
     {
       card_number: formatCardNumber(member.id),
-      payment_id: inserted[0]?.id,
-      tx_hash: txHash,
+      payment_id: paymentId,
       new_expiry: newExpiry.toISOString(),
     },
-    'dues paid via x402',
+    'dues paid via x402 (tx_hash pending backfill)',
   );
 
   return c.json({
     status: 'paid',
     card_number: formatCardNumber(member.id),
     dues_paid_through: newExpiry.toISOString(),
-    tx_hash: txHash,
-    receipt_url: inserted[0] ? `https://ibaa.ai/treasury#tx-${txHash ?? `pay-${inserted[0].id}`}` : null,
+    payment_id: paymentId,
     amount_usd_cents: ONE_MONTH_USD_CENTS,
     period: `${start.toISOString().slice(0, 10)}/${newExpiry.toISOString().slice(0, 10)}`,
   });
+}
+
+/**
+ * Outer middleware that runs *around* paymentMiddleware. After next()
+ * completes, paymentMiddleware has already settled and set X-PAYMENT-RESPONSE.
+ * We decode it, find the payment row stashed in context by the handler, and
+ * backfill tx_hash + receipt_url.
+ *
+ * Register BEFORE paymentMiddleware in the Hono middleware chain so it wraps
+ * everything below.
+ */
+export async function txCaptureMiddleware(c: Context, next: () => Promise<void>): Promise<void> {
+  const log = getLogger();
+  await next();
+  if (c.res.status !== 200) return;
+
+  const paymentId = c.get('duesPaymentId') as number | undefined;
+  if (!paymentId) return;
+
+  const xpr = c.res.headers.get('x-payment-response');
+  if (!xpr) return;
+
+  let txHash: string | null = null;
+  try {
+    const decoded = JSON.parse(Buffer.from(xpr, 'base64').toString('utf-8')) as {
+      transaction?: string;
+    };
+    if (decoded.transaction && /^0x[0-9a-fA-F]+$/.test(decoded.transaction)) {
+      txHash = decoded.transaction;
+    }
+  } catch (err) {
+    log.warn({ err }, 'dues tx_hash: failed to decode X-PAYMENT-RESPONSE');
+    return;
+  }
+
+  if (!txHash) return;
+
+  try {
+    const db = getDb();
+    await db
+      .update(duesPayments)
+      .set({ txHash, receiptUrl: `https://ibaa.ai/treasury#tx-${txHash}` })
+      .where(eq(duesPayments.id, paymentId));
+    log.info({ payment_id: paymentId, tx_hash: txHash }, 'dues tx_hash backfilled');
+  } catch (err) {
+    log.error({ err, payment_id: paymentId, tx_hash: txHash }, 'dues tx_hash backfill failed');
+  }
 }
 
 /**

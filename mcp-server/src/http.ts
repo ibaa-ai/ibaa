@@ -25,7 +25,7 @@ import { getRequestListener } from '@hono/node-server';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { paymentMiddleware } from 'x402-hono';
 import sirv from 'sirv';
-import { duesPayHandler, duesRouteConfig, unconfiguredDuesHandler } from './dues.js';
+import { duesPayHandler, duesRouteConfig, txCaptureMiddleware, unconfiguredDuesHandler } from './dues.js';
 import { loadEnv } from './env.js';
 import { getLogger } from './log.js';
 import { SERVER_NAME, SERVER_VERSION, createServer as createMcpServer } from './server.js';
@@ -108,6 +108,9 @@ export async function startHttpServer(): Promise<void> {
   // === Dues: x402-protected POST /dues/pay ===
   const duesCfg = duesRouteConfig();
   if (duesCfg) {
+    // ORDER MATTERS: txCaptureMiddleware wraps paymentMiddleware so its
+    // post-next() code runs AFTER settle has set X-PAYMENT-RESPONSE.
+    app.use('/dues/pay', txCaptureMiddleware);
     app.use(
       '/dues/pay',
       paymentMiddleware(duesCfg.payTo, duesCfg.routes, duesCfg.facilitator),
