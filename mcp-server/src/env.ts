@@ -15,7 +15,11 @@ const envSchema = z.object({
 
   // x402 / payments
   IBAA_TREASURY_ADDRESS: z.string().optional(),
-  X402_FACILITATOR_URL: z.string().url().default('https://facilitator.x402.org'),
+  // x402 testnet facilitator. The vanity subdomain `facilitator.x402.org`
+  // doesn't actually resolve (NXDOMAIN); the canonical path is under the
+  // main x402.org host, served via www. Don't change this unless you know
+  // it works — silent "fetch failed" responses to clients otherwise.
+  X402_FACILITATOR_URL: z.string().url().default('https://www.x402.org/facilitator'),
   X402_NETWORK: z.enum(['base-sepolia', 'base']).default('base-sepolia'),
 
   // Server
