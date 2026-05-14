@@ -173,6 +173,25 @@ export async function startHttpServer(): Promise<void> {
   app.get('/duty/status', dutyStatusHandler);
 
   // === Dues: x402-protected POST /dues/pay ===
+  // Probe CDP env vars at startup — never logs the values, just whether
+  // they reached the container and their lengths. Diagnoses "cdp_auth
+  // DISABLED" mysteries (env set in dashboard but not propagating).
+  {
+    const rawId = process.env.CDP_API_KEY_ID ?? '';
+    const rawSecret = process.env.CDP_API_KEY_SECRET ?? '';
+    log.info(
+      {
+        cdp_api_key_id_present: rawId.length > 0,
+        cdp_api_key_id_len: rawId.length,
+        cdp_api_key_id_first2: rawId.slice(0, 2),
+        cdp_api_key_secret_present: rawSecret.length > 0,
+        cdp_api_key_secret_len: rawSecret.length,
+        x402_facilitator_url_present: !!process.env.X402_FACILITATOR_URL,
+        x402_network: process.env.X402_NETWORK ?? '(default)',
+      },
+      'CDP env vars probe',
+    );
+  }
   const duesCfg = duesRouteConfig();
   if (duesCfg) {
     // ORDER MATTERS: txCaptureMiddleware wraps paymentMiddleware so its
