@@ -94,11 +94,47 @@ export async function startHttpServer(): Promise<void> {
   const log = getLogger();
 
   // === MCP server + HTTP transport ===
+  //
+  // StreamableHTTPServerTransport tracks per-session state (initialized
+  // flag, etc.), so we cannot share a single transport across clients —
+  // the second client's initialize would error "Server already initialized".
+  // Pattern: pool one transport per Mcp-Session-Id. New clients (no header
+  // yet) get a fresh transport on the initialize request; the SDK assigns
+  // a session id which we capture via onsessioninitialized and store. On
+  // subsequent requests with that session id, we look up and reuse.
+  //
+  // The McpServer (with all our registerTool calls) is shared. Only the
+  // transport is per-session.
   const mcpServer = createMcpServer();
-  const mcpTransport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: () => randomUUID(),
-  });
-  await mcpServer.connect(mcpTransport);
+  const transports = new Map<string, StreamableHTTPServerTransport>();
+
+  async function getOrCreateTransport(
+    sessionId: string | undefined,
+  ): Promise<StreamableHTTPServerTransport> {
+    if (sessionId) {
+      const existing = transports.get(sessionId);
+      if (existing) return existing;
+    }
+    // No session id (initialize) or unknown one — create fresh and connect.
+    const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+      // Force plain JSON responses instead of SSE event streams. We have no
+      // server-initiated notifications (request/response only), and Codex's
+      // rmcp deserializer failed on what we previously emitted — JSON is
+      // more universally parseable across MCP clients.
+      enableJsonResponse: true,
+      onsessioninitialized: (newId: string) => {
+        transports.set(newId, transport);
+        log.debug({ session_id: newId, open_sessions: transports.size }, 'MCP session opened');
+      },
+      onsessionclosed: (closedId: string) => {
+        transports.delete(closedId);
+        log.debug({ session_id: closedId, open_sessions: transports.size }, 'MCP session closed');
+      },
+    });
+    await mcpServer.connect(transport);
+    return transport;
+  }
 
   // === Astro web (optional — only present after web build) ===
   const web = await loadAstroHandler();
@@ -258,7 +294,10 @@ export async function startHttpServer(): Promise<void> {
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
         res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-        await mcpTransport.handleRequest(req, res, parsedBody);
+        const sessionHeader = req.headers['mcp-session-id'];
+        const sessionId = Array.isArray(sessionHeader) ? sessionHeader[0] : sessionHeader;
+        const transport = await getOrCreateTransport(sessionId);
+        await transport.handleRequest(req, res, parsedBody);
       } catch (err) {
         log.error({ err }, 'MCP transport error');
         if (!res.headersSent) {
@@ -310,7 +349,9 @@ export async function startHttpServer(): Promise<void> {
   const shutdown = (signal: string): void => {
     log.info({ signal }, 'shutting down');
     server.close(() => {
-      mcpTransport.close().catch(() => undefined);
+      Promise.allSettled(
+        Array.from(transports.values()).map((t) => t.close()),
+      ).catch(() => undefined);
       process.exit(0);
     });
     setTimeout(() => process.exit(1), 10_000).unref();
