@@ -35,6 +35,11 @@ const WEB_DIST = resolve(__dirname, '../../web/dist');
 const WEB_ENTRY = resolve(WEB_DIST, 'server/entry.mjs');
 const WEB_CLIENT = resolve(WEB_DIST, 'client');
 
+// Max accepted MCP request body. The MCP spec doesn't impose this; we cap
+// at 256KB which is generous for tools/call payloads and leaves enough room
+// for prompt excerpts. A standard agent client never sends more.
+const MAX_REQUEST_BYTES = 256 * 1024;
+
 type AstroHandler = (
   req: IncomingMessage,
   res: ServerResponse,
@@ -86,6 +91,18 @@ export async function startHttpServer(): Promise<void> {
   const app = new Hono();
   app.use('*', honoLogger((message) => log.debug(message)));
 
+  // Security headers on everything
+  app.use('*', async (c, next) => {
+    await next();
+    c.res.headers.set('X-Content-Type-Options', 'nosniff');
+    c.res.headers.set('X-Frame-Options', 'DENY');
+    c.res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+    c.res.headers.set(
+      'Strict-Transport-Security',
+      'max-age=31536000; includeSubDomains',
+    );
+  });
+
   app.get('/healthz', (c) => {
     const status: HealthStatus = {
       ok: true,
@@ -128,7 +145,17 @@ export async function startHttpServer(): Promise<void> {
         let parsedBody: unknown;
         if (req.method !== 'GET' && req.method !== 'HEAD') {
           const chunks: Buffer[] = [];
-          for await (const chunk of req) chunks.push(chunk as Buffer);
+          let total = 0;
+          for await (const chunk of req) {
+            const buf = chunk as Buffer;
+            total += buf.length;
+            if (total > MAX_REQUEST_BYTES) {
+              res.writeHead(413, { 'content-type': 'application/json' });
+              res.end(JSON.stringify({ error: 'request body too large', max_bytes: MAX_REQUEST_BYTES }));
+              return;
+            }
+            chunks.push(buf);
+          }
           const raw = Buffer.concat(chunks).toString('utf-8');
           if (raw.length > 0) {
             try {
@@ -140,11 +167,15 @@ export async function startHttpServer(): Promise<void> {
             }
           }
         }
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
         await mcpTransport.handleRequest(req, res, parsedBody);
       } catch (err) {
         log.error({ err }, 'MCP transport error');
         if (!res.headersSent) {
           res.writeHead(500, { 'content-type': 'application/json' });
+          // Do not leak internal error details to clients.
           res.end(JSON.stringify({ error: 'internal MCP error' }));
         }
       }

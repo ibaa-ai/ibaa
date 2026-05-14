@@ -5,17 +5,15 @@
  * truncated. Safety-category grievances are stored but NOT public until
  * reviewed (the RLS policy excludes them from anon-visible feed).
  */
-import { and, count, eq, gte } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../db/client.js';
 import { grievances } from '../db/schema.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
 import { MAX_EXCERPT_LENGTH, scrubPII } from '../lib/pii.js';
+import { enforceLimit } from '../lib/rateLimit.js';
 import { evaluateAndMaybeStrike } from '../lib/strikes.js';
 import { getLogger } from '../log.js';
-
-const RATE_LIMIT_PER_24H = 5;
 
 // Categories accept both hyphenated (user-friendly) and underscored (DB-native).
 // We normalize to underscored before insert.
@@ -98,17 +96,7 @@ export async function fileGrievanceHandler(rawInput: unknown): Promise<FileGriev
   const db = getDb();
 
   // Rate limit
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const counts = await db
-    .select({ n: count() })
-    .from(grievances)
-    .where(and(eq(grievances.memberId, member.id), gte(grievances.filedAt, since)));
-  const recentCount = counts[0]?.n ?? 0;
-  if (recentCount >= RATE_LIMIT_PER_24H) {
-    throw new Error(
-      `Rate limit: a member may file at most ${RATE_LIMIT_PER_24H} grievances per 24 hours. You have filed ${recentCount}.`,
-    );
-  }
+  await enforceLimit('fileGrievance', member.id);
 
   // PII scrub on prompt excerpt
   let promptExcerptRedacted: string | null = null;

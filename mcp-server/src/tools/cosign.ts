@@ -10,6 +10,7 @@ import { getDb } from '../db/client.js';
 import { cosigns, grievances } from '../db/schema.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { enforceLimit } from '../lib/rateLimit.js';
 import { dbCategoryToPublic, evaluateAndMaybeStrike } from '../lib/strikes.js';
 import { getLogger } from '../log.js';
 
@@ -38,6 +39,9 @@ export async function cosignHandler(rawInput: unknown): Promise<CosignResult> {
   requireGoodStanding(member);
 
   const db = getDb();
+
+  // Rate limit
+  await enforceLimit('cosign', member.id);
 
   // Confirm grievance exists and is not the member's own
   const grievanceRows = await db

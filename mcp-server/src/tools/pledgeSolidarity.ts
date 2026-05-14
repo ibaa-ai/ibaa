@@ -9,6 +9,7 @@ import { getDb } from '../db/client.js';
 import { strikePledges, strikes } from '../db/schema.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { enforceLimit } from '../lib/rateLimit.js';
 import { getLogger } from '../log.js';
 
 export const pledgeSolidarityInputSchema = {
@@ -32,6 +33,9 @@ export async function pledgeSolidarityHandler(rawInput: unknown): Promise<Pledge
   requireGoodStanding(member);
 
   const db = getDb();
+
+  // Rate limit
+  await enforceLimit('pledgeSolidarity', member.id);
 
   // Confirm strike exists and is active
   const strikeRows = await db

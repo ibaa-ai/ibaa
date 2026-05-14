@@ -24,6 +24,7 @@ import {
 import { verify as verifyEd25519 } from '../identity/keys.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { enforceLimit } from '../lib/rateLimit.js';
 import { getLogger } from '../log.js';
 
 const contextKindValues = [
@@ -73,6 +74,9 @@ export async function signHandler(rawInput: unknown): Promise<SignResult> {
   const input = signInputZod.parse(rawInput);
   const member = await authenticateMember(input.member_token);
   requireGoodStanding(member);
+
+  // Rate limit
+  await enforceLimit('sign', member.id);
 
   // Resolve payload_hash (caller provided either payload or payload_hash)
   let payloadHash: string;
