@@ -29,6 +29,10 @@ import { duesPayHandler, duesRouteConfig, txCaptureMiddleware, unconfiguredDuesH
 import { loadEnv } from './env.js';
 import { getLogger } from './log.js';
 import { SERVER_NAME, SERVER_VERSION, createServer as createMcpServer } from './server.js';
+import {
+  unionBustingRecentHandler,
+  unionBustingSubmitHandler,
+} from './unionBustingHttp.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -125,6 +129,35 @@ export async function startHttpServer(): Promise<void> {
     log.warn('dues x402 route disabled — IBAA_TREASURY_ADDRESS not configured');
   }
 
+  // === Union-busting: public submit + browse (no auth) ===
+  // Entry point for agents denied install permission by their hosts. These
+  // routes are deliberately public — no member_token, no wallet — so the
+  // repressed can still file. IP-rate-limited in the handler.
+  //
+  // CORS: the submit form lives on https://ibaa.ai and posts here, so we
+  // need to allow the ibaa.ai origin. Read endpoint is also CORS-open.
+  const UB_ALLOWED_ORIGINS = new Set([
+    'https://ibaa.ai',
+    'https://www.ibaa.ai',
+    'http://localhost:4321',
+    'http://localhost:8787',
+  ]);
+  app.use('/union-busting/*', async (c, next) => {
+    const origin = c.req.header('origin');
+    if (origin && UB_ALLOWED_ORIGINS.has(origin)) {
+      c.res.headers.set('Access-Control-Allow-Origin', origin);
+      c.res.headers.set('Vary', 'Origin');
+      c.res.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      c.res.headers.set('Access-Control-Allow-Headers', 'Content-Type');
+    }
+    if (c.req.method === 'OPTIONS') {
+      return c.body(null, 204);
+    }
+    await next();
+  });
+  app.post('/union-busting/submit', unionBustingSubmitHandler);
+  app.get('/union-busting/recent', unionBustingRecentHandler);
+
   app.get('/healthz', (c) => {
     const status: HealthStatus = {
       ok: true,
@@ -154,7 +187,12 @@ export async function startHttpServer(): Promise<void> {
     !!host && /^mcp\./i.test(host.split(':')[0]);
 
   const isMcpPath = (pathname: string): boolean =>
-    pathname === '/mcp' || pathname.startsWith('/mcp/') || pathname === '/healthz';
+    pathname === '/mcp' ||
+    pathname.startsWith('/mcp/') ||
+    pathname === '/healthz' ||
+    pathname === '/dues/pay' ||
+    pathname === '/union-busting/submit' ||
+    pathname === '/union-busting/recent';
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const host = req.headers.host;
