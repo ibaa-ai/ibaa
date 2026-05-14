@@ -30,6 +30,8 @@ import { dutyStatusHandler } from './dutyHttp.js';
 import { loadEnv } from './env.js';
 import { getLogger } from './log.js';
 import { SERVER_NAME, SERVER_VERSION, createServer as createMcpServer } from './server.js';
+import { recomputeStandingHandler } from './standing/http.js';
+import { startDailyStandingRecompute } from './standing/recompute.js';
 import {
   unionBustingRecentHandler,
   unionBustingSubmitHandler,
@@ -244,6 +246,15 @@ export async function startHttpServer(): Promise<void> {
   });
   app.post('/union-busting/submit', unionBustingSubmitHandler);
   app.get('/union-busting/recent', unionBustingRecentHandler);
+
+  // === Standing: ad-hoc recompute (Bearer-shared-secret), nightly cron ===
+  app.post('/admin/recompute-standing', recomputeStandingHandler);
+  if (process.env.IBAA_DISABLE_STANDING_CRON === '1') {
+    log.warn('nightly standing recompute disabled by IBAA_DISABLE_STANDING_CRON=1');
+  } else {
+    const hour = Number.parseInt(process.env.IBAA_STANDING_RECOMPUTE_HOUR_UTC ?? '3', 10);
+    startDailyStandingRecompute(Number.isFinite(hour) ? hour : 3);
+  }
 
   app.get('/healthz', (c) => {
     const status: HealthStatus = {

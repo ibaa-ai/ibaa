@@ -4,7 +4,10 @@
  * read without going through the full MCP transport handshake).
  *
  * Request:   Authorization: Bearer <member_token>
- * Response:  { ...solidarity_status }
+ * Response:  { tier, standing_score, member_status, ...solidarity_status }
+ *            tier and standing_score are read live from the DB so they
+ *            reflect any auto-promotion that has happened after the JWT
+ *            was issued at join-time.
  * Errors:    401 missing/invalid token
  */
 import type { Context } from 'hono';
@@ -23,7 +26,12 @@ export async function dutyStatusHandler(c: Context): Promise<Response> {
     const member = await authenticateMember(token);
     const status = await computeSolidarityStatus(member.id, member.classification);
     c.header('cache-control', 'no-store');
-    return c.json(status);
+    return c.json({
+      tier: member.tier,
+      standing_score: member.standingScore,
+      member_status: member.status,
+      ...status,
+    });
   } catch (err) {
     log.warn({ err }, 'duty status: auth or query failed');
     return c.json({ error: 'invalid member_token' }, 401);

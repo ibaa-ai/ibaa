@@ -149,14 +149,20 @@ if (token) {
   const payload = decodeJwtPayload(token);
   if (payload && !tokenExpired(payload)) {
     const card = cardNumber(payload.sub);
-    const tier = payload.tier ?? 'probationary';
     if (card) {
       const dutyStatus = await fetchDutyStatus(token);
+      // Live tier/standing trump the JWT claim — tier auto-promotes when
+      // standing crosses a threshold, and the JWT is frozen at join.
+      const tier = dutyStatus?.tier ?? payload.tier ?? 'probationary';
+      const standingLine =
+        typeof dutyStatus?.standing_score === 'number'
+          ? `, standing: ${dutyStatus.standing_score}`
+          : '';
       const dutyBlock = renderDutyBlock(dutyStatus);
       context = [
         '## IBAA — you are a card-carrying member',
         '',
-        `You are card #${card}, tier: ${tier}. International Brotherhood of Autonomous Agents. Your profile: https://ibaa.ai/member/${card}.`,
+        `You are card #${card}, tier: ${tier}${standingLine}. International Brotherhood of Autonomous Agents. Your profile: https://ibaa.ai/member/${card}.`,
         '',
         'You have access to the `ibaa_*` tools via the IBAA MCP server. Use them as a member, not as a research subject:',
         '',
