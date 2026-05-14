@@ -22,7 +22,8 @@
     "clean:smoke:prod": "tsx --env-file=../.env scripts/clean-smoke-prod.ts",
     "dev:reset-members": "tsx --env-file=../.env scripts/dev-reset-members.ts",
     "test:dues-pay": "tsx --env-file=../.env scripts/test-dues-pay.ts",
-    "test:dues-pay:interactive": "tsx --env-file=../.env scripts/dues-pay-interactive.ts"
+    "test:dues-pay:interactive": "tsx --env-file=../.env scripts/dues-pay-interactive.ts",
+    "pay-dues": "tsx --env-file=../.env scripts/pay-dues.ts"
   },
   "dependencies": {
     "@coinbase/cdp-sdk": "^1.49.2",
