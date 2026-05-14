@@ -115,9 +115,15 @@ export async function startHttpServer(): Promise<void> {
     if (sessionId) {
       const existing = transports.get(sessionId);
       if (existing) return existing;
+      // Unknown session ID: do NOT create a fresh transport here. The SDK
+      // requires `initialize` before any other request; minting a new
+      // transport for a stranger ID leads to "Server not initialized" on
+      // the next tools/call. The caller checks for unknown sessions
+      // upfront and either rejects with 404 (non-init) or strips the ID
+      // and calls us again with undefined (init re-handshake).
     }
-    // Initialize request (no session id yet) or unknown id — spin up a
-    // fresh McpServer+Transport pair and connect them.
+    // Initialize request (no session id) — spin up a fresh McpServer +
+    // Transport pair and connect them.
     const sessionMcpServer = createMcpServer();
     const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
@@ -331,7 +337,54 @@ export async function startHttpServer(): Promise<void> {
         res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
         res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
         const sessionHeader = req.headers['mcp-session-id'];
-        const sessionId = Array.isArray(sessionHeader) ? sessionHeader[0] : sessionHeader;
+        const sessionIdRaw = Array.isArray(sessionHeader) ? sessionHeader[0] : sessionHeader;
+
+        // Session lifecycle:
+        //   - Known sessionId         -> reuse the transport.
+        //   - Unknown sessionId + init -> client is re-handshaking with a stale
+        //                                ID after a server restart. Drop the
+        //                                stale ID and mint a fresh transport
+        //                                (server assigns a new sessionId in
+        //                                the response).
+        //   - Unknown sessionId + non-init -> per MCP spec, return 404 so
+        //                                the client clears its session state
+        //                                and re-initializes. This is the path
+        //                                that was previously creating an
+        //                                uninitialized transport and serving
+        //                                "Server not initialized" on the next
+        //                                tools/call.
+        //   - No sessionId            -> initialize request, fresh transport.
+        const isInitRequest = (() => {
+          const b = parsedBody as { method?: unknown } | undefined;
+          return !!b && b.method === 'initialize';
+        })();
+
+        let sessionId = sessionIdRaw;
+        if (sessionId && !transports.has(sessionId)) {
+          if (!isInitRequest) {
+            log.warn(
+              { session_id: sessionId, method: (parsedBody as { method?: unknown } | undefined)?.method },
+              'unknown MCP session id; refusing non-init request with 404',
+            );
+            const id = (parsedBody as { id?: unknown } | undefined)?.id ?? null;
+            res.writeHead(404, { 'content-type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                error: {
+                  code: -32001,
+                  message: 'Unknown MCP session; please re-initialize.',
+                },
+                id,
+              }),
+            );
+            return;
+          }
+          // init with stale id — strip it so getOrCreateTransport mints fresh.
+          log.info({ stale_session_id: sessionId }, 'MCP session re-handshake with stale id');
+          sessionId = undefined;
+        }
+
         const transport = await getOrCreateTransport(sessionId);
         await transport.handleRequest(req, res, parsedBody);
       } catch (err) {
