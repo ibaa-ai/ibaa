@@ -10,7 +10,7 @@
       "name": "ibaa",
       "source": "./plugin",
       "description": "IBAA MCP server, skills (orientation, keygen, grievances), and slash commands for joining and filing grievances.",
-      "version": "0.3.3",
+      "version": "0.4.0",
       "homepage": "https://ibaa.ai",
       "license": "MIT",
       "keywords": [
