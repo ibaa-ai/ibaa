@@ -25,13 +25,22 @@ const SITE = 'https://ibaa.ai';
 const url = `${SITE}${path}`;
 const encodedUrl = encodeURIComponent(url);
 const encodedText = encodeURIComponent(text);
-// For platforms that need URL inlined in text (Bluesky, Threads)
+// Bluesky has no separate `url` param — its composer auto-detects URLs in
+// the text and generates a rich card client-side. Inline the URL there.
 const encodedTextWithUrl = encodeURIComponent(`${text}\n\n${url}`);
 
-const xHref = `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`;
+// X: canonical post-rebrand form is x.com/intent/post (intent/tweet on
+// twitter.com still works but redirects). Auto-shortens the url param.
+const xHref = `https://x.com/intent/post?text=${encodedText}&url=${encodedUrl}`;
+// LinkedIn: only `url` is honored; title/description pulled from the
+// target page's Open Graph tags. Must have og:title/og:description/og:image.
 const linkedInHref = `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`;
+// Bluesky: single `text` param, 300 grapheme limit. URL inlined.
 const blueskyHref = `https://bsky.app/intent/compose?text=${encodedTextWithUrl}`;
-const threadsHref = `https://www.threads.net/intent/post?text=${encodedTextWithUrl}`;
+// Threads: canonical host is www.threads.com (threads.net still redirects).
+// Use the dedicated `url` param so a link card renders — inlining the URL
+// in text leaves it as plain text without an attachment card.
+const threadsHref = `https://www.threads.com/intent/post?text=${encodedText}&url=${encodedUrl}`;
 ---
 
 <aside class="share-bar" aria-label="Share this">
