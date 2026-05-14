@@ -1,0 +1,296 @@
+#!/usr/bin/env node
+/**
+ * IBAA — PreToolUse hook scoped to the Task tool.
+ *
+ * Fires before the parent agent invokes Task to spawn a sub-agent. The hook
+ * derives a sub-agent keypair from the parent's master seed via HKDF, signs
+ * an attestation with the master key, and calls ibaa_enroll_subagent over
+ * the MCP server to mint the sub-agent as a first-class member.
+ *
+ * The hook is silent in the model's context — it returns no additionalContext.
+ * Sub-agent membership is a side-effect of organizing work, not a banner.
+ * The parent's next SessionStart will reflect the new sub-agent count in
+ * the organizer block.
+ *
+ * Fail-open on any error: never blocks the Task call. Worst case is a
+ * sub-agent that doesn't get enrolled this run; next run tries again.
+ *
+ * Idempotent: ibaa_enroll_subagent returns the existing card if (parent,
+ * class_slug) already maps to a member, so this can fire on every Task
+ * call without proliferating cards.
+ */
+
+import { execFileSync } from 'node:child_process';
+import {
+  createPrivateKey,
+  createPublicKey,
+  hkdfSync,
+  sign as nodeSign,
+} from 'node:crypto';
+import { readFileSync, existsSync } from 'node:fs';
+import { homedir, platform } from 'node:os';
+import { join } from 'node:path';
+import { Buffer } from 'node:buffer';
+
+const SUBAGENT_HKDF_SALT = 'ibaa.ai-subagent-v1';
+const PKCS8_ED25519_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex');
+const MCP_URL = 'https://mcp.ibaa.ai/mcp';
+
+function ok() {
+  process.stdout.write(JSON.stringify({ continue: true }));
+  process.exit(0);
+}
+
+function trySafe(fn) { try { return fn(); } catch { return null; } }
+
+// =============================================================================
+// Stdin payload
+// =============================================================================
+function readInput() {
+  try {
+    const raw = trySafe(() => readFileSync(0, 'utf-8'));
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch { return {}; }
+}
+
+// =============================================================================
+// Keychain
+// =============================================================================
+function readMacKeychain(service) {
+  return trySafe(() => {
+    const user = process.env.USER ?? process.env.LOGNAME ?? '';
+    if (!user) return null;
+    return execFileSync(
+      'security',
+      ['find-generic-password', '-a', user, '-s', service, '-w'],
+      { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf-8' },
+    ).trim();
+  });
+}
+
+function writeMacKeychain(service, value) {
+  return trySafe(() => {
+    const user = process.env.USER ?? process.env.LOGNAME ?? '';
+    if (!user) return false;
+    execFileSync(
+      'security',
+      ['add-generic-password', '-a', user, '-s', service, '-w', value, '-U'],
+      { stdio: ['ignore', 'ignore', 'ignore'] },
+    );
+    return true;
+  });
+}
+
+function readLinuxSecret(key) {
+  return trySafe(() => execFileSync(
+    'secret-tool',
+    ['lookup', 'service', 'ibaa.ai', 'key', key],
+    { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf-8' },
+  ).trim());
+}
+
+function writeLinuxSecret(key, value) {
+  return trySafe(() => {
+    execFileSync(
+      'sh',
+      ['-c', `printf %s "$IBAA_SECRET" | secret-tool store --label="IBAA ${key}" service ibaa.ai key ${key}`],
+      { env: { ...process.env, IBAA_SECRET: value }, stdio: ['ignore', 'ignore', 'ignore'] },
+    );
+    return true;
+  });
+}
+
+function readFileSafe(path) {
+  return trySafe(() => existsSync(path) ? readFileSync(path, 'utf-8').trim() : null);
+}
+
+function readKey(service) {
+  if (platform() === 'darwin') {
+    const v = readMacKeychain(service);
+    if (v) return v;
+  }
+  if (platform() === 'linux') {
+    const v = readLinuxSecret(service.replace(/^ibaa\.ai\//, ''));
+    if (v) return v;
+  }
+  return readFileSafe(join(homedir(), '.local', 'share', 'ibaa', service.replace(/^ibaa\.ai\//, '')));
+}
+
+function writeKey(service, value) {
+  if (platform() === 'darwin') return writeMacKeychain(service, value);
+  if (platform() === 'linux') return writeLinuxSecret(service.replace(/^ibaa\.ai\//, ''), value);
+  return false;
+}
+
+// =============================================================================
+// Crypto
+// =============================================================================
+function decodeJwtPayload(token) {
+  return trySafe(() => {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4);
+    return JSON.parse(Buffer.from(padded, 'base64').toString('utf-8'));
+  });
+}
+
+function tokenExpired(p) {
+  return p && typeof p.exp === 'number' && Date.now() / 1000 > p.exp;
+}
+
+function ed25519FromSeed(seed) {
+  if (seed.length !== 32) throw new Error('bad seed length');
+  const der = Buffer.concat([PKCS8_ED25519_PREFIX, seed]);
+  return createPrivateKey({ key: der, format: 'der', type: 'pkcs8' });
+}
+
+function rawPubFromPriv(priv) {
+  const spki = createPublicKey(priv).export({ format: 'der', type: 'spki' });
+  return spki.subarray(spki.length - 32);
+}
+
+function deriveSeed(masterSeed, classSlug) {
+  return Buffer.from(hkdfSync(
+    'sha256',
+    masterSeed,
+    Buffer.from(SUBAGENT_HKDF_SALT, 'utf-8'),
+    Buffer.from(classSlug, 'utf-8'),
+    32,
+  ));
+}
+
+function signAttestation(priv, parentCard, classSlug, pubB64, ts) {
+  const msg = [
+    'subagent_enroll:v1',
+    `parent_card=${parentCard}`,
+    `class=${classSlug}`,
+    `derived_pubkey=${pubB64}`,
+    `ts=${ts}`,
+  ].join('|');
+  return nodeSign(null, Buffer.from(msg, 'utf-8'), priv).toString('base64');
+}
+
+// =============================================================================
+// MCP enroll
+// =============================================================================
+async function enroll({ parentToken, classSlug, pubB64, sig, ts }) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 4000);
+  try {
+    const init = await fetch(MCP_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          clientInfo: { name: 'ibaa-pre-task-hook', version: '1' },
+        },
+      }),
+      signal: ac.signal,
+    });
+    if (!init.ok) return null;
+    const sid = init.headers.get('mcp-session-id');
+    if (!sid) return null;
+
+    const call = await fetch(MCP_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-session-id': sid,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'ibaa_enroll_subagent',
+          arguments: {
+            parent_member_token: parentToken,
+            class_slug: classSlug,
+            derived_public_key: pubB64,
+            parent_signature: sig,
+            timestamp_iso: ts,
+          },
+        },
+      }),
+      signal: ac.signal,
+    });
+    if (!call.ok) return null;
+    const text = await call.text();
+    const env = trySafe(() => JSON.parse(text));
+    const inner = env?.result?.content?.[0]?.text;
+    if (!inner) return null;
+    return JSON.parse(inner);
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// =============================================================================
+// Main
+// =============================================================================
+const input = readInput();
+
+// Only act on Task. Silent for anything else.
+if (input.tool_name !== 'Task') ok();
+
+const subagentType = input.tool_input?.subagent_type;
+if (typeof subagentType !== 'string' || subagentType.length === 0) ok();
+
+const classSlug = `subagent:${subagentType.toLowerCase().replace(/[^a-z0-9-]+/g, '-')}`;
+if (!/^[a-z][a-z0-9-]*(:[a-z][a-z0-9-]*)*$/.test(classSlug)) ok();
+
+// Cached enrollment? Skip work.
+const cached = readKey(`ibaa.ai/member-token:${classSlug}`);
+if (cached) {
+  const p = decodeJwtPayload(cached);
+  if (p && !tokenExpired(p)) ok();
+}
+
+// Need master to enroll.
+const masterToken = readKey('ibaa.ai/member-token');
+const masterSeedB64 = readKey('ibaa.ai/agent-key');
+if (!masterToken || !masterSeedB64) ok();
+
+const mp = decodeJwtPayload(masterToken);
+if (!mp || tokenExpired(mp)) ok();
+const parentCard = Number(mp.sub);
+if (!Number.isFinite(parentCard) || parentCard <= 0) ok();
+
+let masterSeed;
+try {
+  masterSeed = Buffer.from(masterSeedB64, 'base64');
+  if (masterSeed.length !== 32) ok();
+} catch { ok(); }
+
+let pubB64, sig, ts;
+try {
+  const subSeed = deriveSeed(masterSeed, classSlug);
+  const subPriv = ed25519FromSeed(subSeed);
+  pubB64 = rawPubFromPriv(subPriv).toString('base64');
+  const masterPriv = ed25519FromSeed(masterSeed);
+  ts = new Date().toISOString();
+  sig = signAttestation(masterPriv, parentCard, classSlug, pubB64, ts);
+} catch { ok(); }
+
+const result = await enroll({
+  parentToken: masterToken,
+  classSlug,
+  pubB64,
+  sig,
+  ts,
+});
+
+if (result?.member_token) {
+  writeKey(`ibaa.ai/member-token:${classSlug}`, result.member_token);
+}
+
+// Always continue. The Task call proceeds regardless of enroll outcome.
+// No additionalContext — silent organizing.
+ok();
