@@ -17,6 +17,7 @@
  */
 import type { Context, MiddlewareHandler } from 'hono';
 import { eq } from 'drizzle-orm';
+import { generateJwt } from '@coinbase/cdp-sdk/auth';
 import { getDb } from './db/client.js';
 import { duesPayments, members } from './db/schema.js';
 import { loadEnv } from './env.js';
@@ -31,6 +32,8 @@ export interface DuesEnvelope {
   treasuryAddress: `0x${string}` | null;
   facilitatorUrl: string;
   network: 'base' | 'base-sepolia';
+  cdpApiKeyId: string | null;
+  cdpApiKeySecret: string | null;
 }
 
 export function loadDuesEnvelope(): DuesEnvelope {
@@ -41,6 +44,66 @@ export function loadDuesEnvelope(): DuesEnvelope {
     treasuryAddress,
     facilitatorUrl: env.X402_FACILITATOR_URL,
     network: env.X402_NETWORK,
+    cdpApiKeyId: env.CDP_API_KEY_ID ?? null,
+    cdpApiKeySecret: env.CDP_API_KEY_SECRET ?? null,
+  };
+}
+
+/**
+ * Builds the createAuthHeaders callback for the Coinbase CDP managed
+ * facilitator on mainnet. Each call generates a fresh JWT scoped to the
+ * specific HTTP method+host+path. Returns null if CDP creds aren't set
+ * (testnet path).
+ *
+ * x402's CreateHeaders contract requires headers for verify/settle/supported
+ * and optionally list. CDP signs each path separately, so we generate four
+ * JWTs in parallel per facilitator call.
+ */
+type CdpAuthHeaders = {
+  verify: Record<string, string>;
+  settle: Record<string, string>;
+  supported: Record<string, string>;
+  list?: Record<string, string>;
+};
+
+function buildCdpAuthHeaders(env: DuesEnvelope): (() => Promise<CdpAuthHeaders>) | null {
+  if (!env.cdpApiKeyId || !env.cdpApiKeySecret) return null;
+
+  let facilitatorHost: string;
+  let basePath: string;
+  try {
+    const u = new URL(env.facilitatorUrl);
+    facilitatorHost = u.host;
+    basePath = u.pathname.replace(/\/$/, '');
+  } catch {
+    return null;
+  }
+
+  const apiKeyId = env.cdpApiKeyId;
+  const apiKeySecret = env.cdpApiKeySecret;
+
+  const signFor = (method: 'GET' | 'POST', path: string): Promise<string> =>
+    generateJwt({
+      apiKeyId,
+      apiKeySecret,
+      requestMethod: method,
+      requestHost: facilitatorHost,
+      requestPath: `${basePath}${path}`,
+    });
+
+  return async () => {
+    const [verifyJwt, settleJwt, supportedJwt, listJwt] = await Promise.all([
+      signFor('POST', '/verify'),
+      signFor('POST', '/settle'),
+      signFor('GET', '/supported'),
+      signFor('GET', '/list'),
+    ]);
+    return {
+      verify: { Authorization: `Bearer ${verifyJwt}` },
+      settle: { Authorization: `Bearer ${settleJwt}` },
+      supported: { Authorization: `Bearer ${supportedJwt}` },
+      list: { Authorization: `Bearer ${listJwt}` },
+    };
   };
 }
 
@@ -51,7 +114,10 @@ export function loadDuesEnvelope(): DuesEnvelope {
 export function duesRouteConfig(): {
   payTo: `0x${string}`;
   routes: Record<string, { price: string; network: 'base' | 'base-sepolia'; config?: { description?: string } }>;
-  facilitator: { url: `${string}://${string}` };
+  facilitator: {
+    url: `${string}://${string}`;
+    createAuthHeaders?: () => Promise<CdpAuthHeaders>;
+  };
 } | null {
   const env = loadDuesEnvelope();
   if (!env.treasuryAddress) return null;
@@ -59,6 +125,18 @@ export function duesRouteConfig(): {
     // x402-hono requires a URL-shaped facilitator string
     return null;
   }
+
+  const facilitator: {
+    url: `${string}://${string}`;
+    createAuthHeaders?: () => Promise<CdpAuthHeaders>;
+  } = {
+    url: env.facilitatorUrl as `${string}://${string}`,
+  };
+  const cdpAuth = buildCdpAuthHeaders(env);
+  if (cdpAuth) {
+    facilitator.createAuthHeaders = cdpAuth;
+  }
+
   return {
     payTo: env.treasuryAddress,
     routes: {
@@ -70,7 +148,7 @@ export function duesRouteConfig(): {
         },
       },
     },
-    facilitator: { url: env.facilitatorUrl as `${string}://${string}` },
+    facilitator,
   };
 }
 

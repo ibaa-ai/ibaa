@@ -25,6 +25,7 @@
     "test:dues-pay:interactive": "tsx --env-file=../.env scripts/dues-pay-interactive.ts"
   },
   "dependencies": {
+    "@coinbase/cdp-sdk": "^1.49.2",
     "@hono/node-server": "^1.13.7",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "@noble/ciphers": "^1.0.0",

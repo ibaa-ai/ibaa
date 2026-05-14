@@ -20,6 +20,9 @@ importers:
 
   mcp-server:
     dependencies:
+      '@coinbase/cdp-sdk':
+        specifier: ^1.49.2
+        version: 1.49.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
       '@hono/node-server':
         specifier: ^1.13.7
         version: 1.19.14(hono@4.12.18)

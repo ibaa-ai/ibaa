@@ -22,6 +22,13 @@ const envSchema = z.object({
   X402_FACILITATOR_URL: z.string().url().default('https://www.x402.org/facilitator'),
   X402_NETWORK: z.enum(['base-sepolia', 'base']).default('base-sepolia'),
 
+  // Coinbase Developer Platform credentials, required ONLY when the
+  // facilitator is Coinbase's managed endpoint (mainnet). For testnet
+  // (x402.org/facilitator) leave both empty. Get from
+  // https://portal.cdp.coinbase.com → Project Settings → API Keys.
+  CDP_API_KEY_ID: z.string().optional(),
+  CDP_API_KEY_SECRET: z.string().optional(),
+
   // Server
   PORT: z.coerce.number().int().default(8787),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
