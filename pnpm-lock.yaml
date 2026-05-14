@@ -81,9 +81,15 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+      viem:
+        specifier: ^2.48.11
+        version: 2.48.11(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.19)
+      x402-fetch:
+        specifier: ^1.2.0
+        version: 1.2.0(@solana/sysvars@5.5.1(typescript@5.9.3))(@tanstack/query-core@5.100.10)(@tanstack/react-query@5.100.10(react@18.3.1))(bufferutil@4.1.0)(react@18.3.1)(typescript@5.9.3)(utf-8-validate@5.0.10)
 
   plugin: {}
 
@@ -4881,6 +4887,9 @@ packages:
       utf-8-validate:
         optional: true
 
+  x402-fetch@1.2.0:
+    resolution: {integrity: sha512-CxCgPO4H4/ADZC31gSUCS/CipkUyppzMJRU3jGrEuhO+2k0optszH+kwO0XJ6pVyDprIT6PvGbmNJ4TGKSCAcQ==}
+
   x402-hono@1.2.0:
     resolution: {integrity: sha512-AyEr9L3dKJwrFetq2vQ089sQeQ1D0p8nnviHQUJMAh42gr52cJ3155Uv0Di+qVLBhuLI0L8zFHBjTIJEI+Egww==}
 
@@ -6508,7 +6517,7 @@ snapshots:
 
   '@scure/bip32@1.7.0':
     dependencies:
-      '@noble/curves': 1.9.1
+      '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
 
@@ -7810,6 +7819,11 @@ snapshots:
     optionalDependencies:
       typescript: 5.9.3
       zod: 3.25.76
+
+  abitype@1.2.4(typescript@5.9.3)(zod@3.22.4):
+    optionalDependencies:
+      typescript: 5.9.3
+      zod: 3.22.4
 
   abitype@1.2.4(typescript@5.9.3)(zod@3.25.76):
     optionalDependencies:
@@ -9483,7 +9497,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@3.22.4)
+      abitype: 1.2.4(typescript@5.9.3)(zod@3.22.4)
       eventemitter3: 5.0.1
     optionalDependencies:
       typescript: 5.9.3
@@ -9498,7 +9512,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@3.25.76)
+      abitype: 1.2.4(typescript@5.9.3)(zod@3.25.76)
       eventemitter3: 5.0.1
     optionalDependencies:
       typescript: 5.9.3
@@ -9508,11 +9522,11 @@ snapshots:
   ox@0.6.7(typescript@5.9.3)(zod@3.25.76):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
-      '@noble/curves': 1.8.1
+      '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
-      '@scure/bip32': 1.6.2
-      '@scure/bip39': 1.5.4
-      abitype: 1.0.8(typescript@5.9.3)(zod@3.25.76)
+      '@scure/bip32': 1.7.0
+      '@scure/bip39': 1.6.0
+      abitype: 1.2.4(typescript@5.9.3)(zod@3.25.76)
       eventemitter3: 5.0.1
     optionalDependencies:
       typescript: 5.9.3
@@ -10776,6 +10790,49 @@ snapshots:
     optionalDependencies:
       bufferutil: 4.1.0
       utf-8-validate: 5.0.10
+
+  x402-fetch@1.2.0(@solana/sysvars@5.5.1(typescript@5.9.3))(@tanstack/query-core@5.100.10)(@tanstack/react-query@5.100.10(react@18.3.1))(bufferutil@4.1.0)(react@18.3.1)(typescript@5.9.3)(utf-8-validate@5.0.10):
+    dependencies:
+      viem: 2.48.11(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@3.25.76)
+      x402: 1.2.0(@solana/sysvars@5.5.1(typescript@5.9.3))(@tanstack/query-core@5.100.10)(@tanstack/react-query@5.100.10(react@18.3.1))(bufferutil@4.1.0)(react@18.3.1)(typescript@5.9.3)(utf-8-validate@5.0.10)
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - '@azure/app-configuration'
+      - '@azure/cosmos'
+      - '@azure/data-tables'
+      - '@azure/identity'
+      - '@azure/keyvault-secrets'
+      - '@azure/storage-blob'
+      - '@capacitor/preferences'
+      - '@deno/kv'
+      - '@netlify/blobs'
+      - '@planetscale/database'
+      - '@react-native-async-storage/async-storage'
+      - '@solana/sysvars'
+      - '@tanstack/query-core'
+      - '@tanstack/react-query'
+      - '@types/react'
+      - '@upstash/redis'
+      - '@vercel/blob'
+      - '@vercel/functions'
+      - '@vercel/kv'
+      - aws4fetch
+      - bufferutil
+      - db0
+      - debug
+      - encoding
+      - expo-auth-session
+      - expo-crypto
+      - expo-web-browser
+      - fastestsmallesttextencoderdecoder
+      - immer
+      - ioredis
+      - react
+      - react-native
+      - supports-color
+      - typescript
+      - uploadthing
+      - utf-8-validate
 
   x402-hono@1.2.0(@solana/sysvars@5.5.1(typescript@5.9.3))(@tanstack/query-core@5.100.10)(@tanstack/react-query@5.100.10(react@18.3.1))(bufferutil@4.1.0)(react@18.3.1)(typescript@5.9.3)(utf-8-validate@5.0.10):
     dependencies:

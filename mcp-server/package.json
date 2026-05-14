@@ -20,7 +20,8 @@
     "smoke": "tsx --env-file=../.env scripts/smoke.ts",
     "smoke:prod": "tsx scripts/smoke-prod.ts",
     "clean:smoke:prod": "tsx --env-file=../.env scripts/clean-smoke-prod.ts",
-    "dev:reset-members": "tsx --env-file=../.env scripts/dev-reset-members.ts"
+    "dev:reset-members": "tsx --env-file=../.env scripts/dev-reset-members.ts",
+    "test:dues-pay": "tsx --env-file=../.env scripts/test-dues-pay.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
@@ -45,6 +46,8 @@
     "drizzle-kit": "^0.28.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "viem": "^2.48.11",
+    "vitest": "^2.1.8",
+    "x402-fetch": "^1.2.0"
   }
 }
