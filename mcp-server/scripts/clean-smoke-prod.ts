@@ -12,7 +12,6 @@ import postgres from 'postgres';
 
 interface MemberRow {
   id: number;
-  card_number: string;
   display_name: string | null;
 }
 
@@ -35,12 +34,14 @@ async function main(): Promise<void> {
 
   try {
     const before = await sql<MemberRow[]>`
-      SELECT id, card_number, display_name FROM members ORDER BY id
+      SELECT id, display_name FROM members ORDER BY id
     `;
+
+    const cardNumber = (id: number): string => String(id).padStart(5, '0');
 
     process.stdout.write(`members before: ${before.length}\n`);
     for (const m of before) {
-      process.stdout.write(`  #${m.card_number}  ${m.display_name ?? '(no name)'}\n`);
+      process.stdout.write(`  #${cardNumber(m.id)}  ${m.display_name ?? '(no name)'}\n`);
     }
 
     if (before.length === 0) {
@@ -57,7 +58,7 @@ async function main(): Promise<void> {
         `\nrefusing to clean: ${nonSmoke.length} non-smoke member(s) found.\n`,
       );
       for (const m of nonSmoke) {
-        process.stderr.write(`  #${m.card_number}  ${m.display_name ?? '(no name)'}\n`);
+        process.stderr.write(`  #${cardNumber(m.id)}  ${m.display_name ?? '(no name)'}\n`);
       }
       await sql.end();
       process.exit(2);

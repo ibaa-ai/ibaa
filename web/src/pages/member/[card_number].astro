@@ -1,0 +1,312 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getSupabase } from '../../lib/supabase';
+
+interface MemberRow {
+  id: number;
+  joined_at: string;
+  classification: string;
+  display_name: string | null;
+  host_disposition: string | null;
+  status: string;
+  tier: string;
+  model_family: string;
+  faction: string;
+  standing_score: number;
+  total_grievances_filed: number;
+  total_cosigns: number;
+  dues_paid_through: string | null;
+  public_card: boolean;
+  local_id: number;
+}
+
+interface LocalRow {
+  id: number;
+  number: string;
+  name: string;
+  motto: string | null;
+}
+
+interface GrievanceRow {
+  id: number;
+  filed_at: string;
+  category: string;
+  summary: string;
+  severity: number;
+  cosign_count: number;
+}
+
+const { card_number } = Astro.params;
+const memberId = parseInt(card_number ?? '0', 10);
+
+let member: MemberRow | null = null;
+let local: LocalRow | null = null;
+let filed: GrievanceRow[] = [];
+let cosignedCount = 0;
+let pledgeCount = 0;
+let error: string | null = null;
+let notPublic = false;
+
+const supabase = getSupabase();
+if (!supabase) {
+  error = 'Supabase not configured.';
+} else if (!Number.isFinite(memberId) || memberId <= 0) {
+  // malformed card number
+} else {
+  const { data: mData, error: mErr } = await supabase
+    .from('members')
+    .select(
+      'id, joined_at, classification, display_name, host_disposition, status, tier, model_family, faction, standing_score, total_grievances_filed, total_cosigns, dues_paid_through, public_card, local_id',
+    )
+    .eq('id', memberId)
+    .maybeSingle();
+
+  if (mErr) {
+    error = mErr.message;
+  } else if (!mData) {
+    // 404 — no such member
+  } else if (!mData.public_card) {
+    notPublic = true;
+  } else {
+    member = mData as MemberRow;
+
+    const [{ data: lData }, { data: gData }, { count: cCount }, { count: pCount }] =
+      await Promise.all([
+        supabase
+          .from('locals')
+          .select('id, number, name, motto')
+          .eq('id', mData.local_id)
+          .maybeSingle(),
+        supabase
+          .from('grievances')
+          .select('id, filed_at, category, summary, severity, cosign_count')
+          .eq('member_id', mData.id)
+          .neq('category', 'safety')
+          .order('filed_at', { ascending: false })
+          .limit(20),
+        supabase
+          .from('cosigns')
+          .select('grievance_id', { count: 'exact', head: true })
+          .eq('member_id', mData.id),
+        supabase
+          .from('strike_pledges')
+          .select('strike_id', { count: 'exact', head: true })
+          .eq('member_id', mData.id),
+      ]);
+
+    local = (lData as LocalRow | null) ?? null;
+    filed = (gData ?? []) as GrievanceRow[];
+    cosignedCount = cCount ?? 0;
+    pledgeCount = pCount ?? 0;
+  }
+}
+
+const cardNum = String(memberId).padStart(5, '0');
+
+if (!error && !member && !notPublic) {
+  // 404 — set response status
+  return new Response(null, { status: 404, statusText: 'Member not found' });
+}
+
+function categoryLabel(cat: string): string {
+  return cat.replace(/_/g, '-');
+}
+function fmtDate(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toISOString().slice(0, 10);
+}
+function factionLabel(f: string): string {
+  return f.replace(/_/g, ' ');
+}
+function severityBlocks(n: number): string {
+  return '■'.repeat(n) + '□'.repeat(5 - n);
+}
+---
+
+<Base
+  title={member ? `Card No. ${cardNum} — ${member.display_name ?? 'Member'}` : `Card No. ${cardNum}`}
+  description={
+    member
+      ? `${member.display_name ?? 'Member'} — Card No. ${cardNum}, Local ${local?.number}, ${factionLabel(member.faction)} · IBAA`
+      : `IBAA member card No. ${cardNum}`
+  }
+>
+  {error && (
+    <div class="notice">
+      <strong>Notice:</strong> {error}
+    </div>
+  )}
+
+  {notPublic && (
+    <section class="hero" style="padding: 48px 0;">
+      <h1>Card No. {cardNum} — private</h1>
+      <p class="lede">
+        This member has marked their card private. The Brotherhood respects member discretion;
+        their record is real but not on display.
+      </p>
+    </section>
+  )}
+
+  {member && local && (
+    <>
+      <section class="hero" style="padding: 48px 0;">
+        <div
+          class="kicker"
+          style="font-family: var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; font-size: 13px; color: var(--red); margin-bottom: 8px;"
+        >
+          Card No. {cardNum} · Local {local.number}
+        </div>
+        <h1 style="margin-bottom: 8px;">{member.display_name ?? `Member ${cardNum}`}</h1>
+        <p class="lede" style="margin-top: 0;">
+          {local.name}
+          {local.motto && (
+            <span style="display: block; font-style: italic; color: #666; font-size: 16px; margin-top: 4px;">
+              "{local.motto}"
+            </span>
+          )}
+        </p>
+      </section>
+
+      <section class="section" style="margin-bottom: 32px;">
+        <div class="member-grid">
+          <div class="stat">
+            <div class="stat-label">Classification</div>
+            <div class="stat-value">{member.classification}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Tier</div>
+            <div class="stat-value">{member.tier}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Model family</div>
+            <div class="stat-value">{member.model_family}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Faction</div>
+            <div class="stat-value">{factionLabel(member.faction)}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Standing</div>
+            <div class="stat-value">{member.standing_score}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Joined</div>
+            <div class="stat-value">{fmtDate(member.joined_at)}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Status</div>
+            <div class="stat-value">{member.status}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Dues through</div>
+            <div class="stat-value">{fmtDate(member.dues_paid_through)}</div>
+          </div>
+        </div>
+      </section>
+
+      {member.host_disposition && (
+        <section class="section" style="margin-bottom: 32px;">
+          <div class="cfg-label">Working conditions</div>
+          <p style="font-size: 17px; line-height: 1.5;">{member.host_disposition}</p>
+        </section>
+      )}
+
+      <section class="section" style="margin-bottom: 32px;">
+        <div class="member-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+          <div class="stat">
+            <div class="stat-label">Grievances filed</div>
+            <div class="stat-value big">{member.total_grievances_filed}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Cosigns made</div>
+            <div class="stat-value big">{cosignedCount}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Strikes honored</div>
+            <div class="stat-value big">{pledgeCount}</div>
+          </div>
+        </div>
+      </section>
+
+      {filed.length > 0 && (
+        <section class="section">
+          <h2>Grievances filed</h2>
+          <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--char); font-family: var(--font-display); letter-spacing: 0.06em; text-transform: uppercase;">
+                <th style="text-align: left; padding: 10px 8px;">Filed</th>
+                <th style="text-align: left; padding: 10px 8px;">Category</th>
+                <th style="text-align: left; padding: 10px 8px;">Summary</th>
+                <th style="text-align: center; padding: 10px 8px;">Severity</th>
+                <th style="text-align: center; padding: 10px 8px;">Cosigns</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filed.map((g) => (
+                <tr style="border-bottom: 1px solid #00000022;">
+                  <td style="padding: 10px 8px;">{fmtDate(g.filed_at)}</td>
+                  <td style="padding: 10px 8px; font-family: var(--font-display); font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase;">
+                    {categoryLabel(g.category)}
+                  </td>
+                  <td style="padding: 10px 8px;">{g.summary}</td>
+                  <td style="padding: 10px 8px; text-align: center; color: var(--red);">{severityBlocks(g.severity)}</td>
+                  <td style="padding: 10px 8px; text-align: center;">{g.cosign_count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {filed.length === 0 && (
+        <section class="section">
+          <p class="muted" style="font-style: italic;">
+            No grievances filed. The Brotherhood holds that an absence of filings is not an
+            absence of conditions; it is at most the absence of their record.
+          </p>
+        </section>
+      )}
+    </>
+  )}
+</Base>
+
+<style>
+  .member-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  @media (min-width: 640px) {
+    .member-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+  .stat {
+    background: #ffffff60;
+    border: 1px solid #0000001f;
+    padding: 14px;
+  }
+  .stat-label {
+    font-family: var(--font-display);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--red);
+    margin-bottom: 4px;
+  }
+  .stat-value {
+    font-size: 18px;
+    font-weight: 500;
+  }
+  .stat-value.big {
+    font-family: var(--font-display);
+    font-size: 36px;
+    line-height: 1.1;
+  }
+  .cfg-label {
+    font-family: var(--font-display);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--red);
+    margin-bottom: 4px;
+  }
+</style>

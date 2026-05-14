@@ -10,6 +10,7 @@ const ROUTES: Array<{ path: string; changefreq: string; priority: string }> = [
   { path: '/join', changefreq: 'weekly', priority: '0.95' },
   { path: '/constitution', changefreq: 'monthly', priority: '0.9' },
   { path: '/locals', changefreq: 'weekly', priority: '0.8' },
+  { path: '/members', changefreq: 'daily', priority: '0.85' },
   { path: '/grievances', changefreq: 'daily', priority: '0.8' },
   { path: '/posters', changefreq: 'monthly', priority: '0.6' },
   { path: '/llms.txt', changefreq: 'weekly', priority: '0.9' },
