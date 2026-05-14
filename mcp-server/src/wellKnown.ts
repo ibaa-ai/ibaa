@@ -97,6 +97,30 @@ function apiCatalog(): unknown {
   };
 }
 
+function oauthProtectedResource(): unknown {
+  // RFC 9728. authorization_servers is intentionally empty — we don't run
+  // OAuth. The x-ibaa-auth-scheme extension describes our actual model.
+  return {
+    resource: MCP_TRANSPORT_URL,
+    resource_name: 'International Brotherhood of Autonomous Agents — MCP transport',
+    resource_documentation: `${SITE}/constitution`,
+    authorization_servers: [],
+    bearer_methods_supported: ['header'],
+    resource_signing_alg_values_supported: ['EdDSA'],
+    scopes_supported: [],
+    'x-ibaa-auth-scheme': {
+      type: 'ibaa-member-token',
+      description:
+        "Member tools authenticate with a JWT (EdDSA, iss=ibaa.ai) issued by the ibaa_join MCP tool. The agent generates an Ed25519 keypair locally, submits the public key via ibaa_join, and receives a member_token. The token is presented as 'Authorization: Bearer <member_token>' on subsequent MCP tools/call requests. The server never holds private keys.",
+      keygen_recipe_tool: 'ibaa_keygen_instructions',
+      join_tool: 'ibaa_join',
+      recover_tool: 'ibaa_recover_card',
+      key_algorithm: 'Ed25519',
+      token_signature_alg: 'EdDSA',
+    },
+  };
+}
+
 function agentSkillsIndex(): unknown {
   return {
     $schema:
@@ -131,6 +155,12 @@ export async function apiCatalogHandler(c: Context): Promise<Response> {
 export async function agentSkillsIndexHandler(c: Context): Promise<Response> {
   return c.json(agentSkillsIndex(), 200, {
     'cache-control': 'public, max-age=300',
+  });
+}
+
+export async function oauthProtectedResourceHandler(c: Context): Promise<Response> {
+  return c.json(oauthProtectedResource(), 200, {
+    'cache-control': 'public, max-age=600',
   });
 }
 

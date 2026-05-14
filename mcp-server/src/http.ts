@@ -38,6 +38,7 @@ import {
   agentSkillsIndexHandler,
   apiCatalogHandler,
   mcpServerCardHandler,
+  oauthProtectedResourceHandler,
 } from './wellKnown.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -128,6 +129,7 @@ export async function startHttpServer(): Promise<void> {
   app.get('/.well-known/mcp/server-card.json', mcpServerCardHandler);
   app.get('/.well-known/api-catalog', apiCatalogHandler);
   app.get('/.well-known/agent-skills/index.json', agentSkillsIndexHandler);
+  app.get('/.well-known/oauth-protected-resource', oauthProtectedResourceHandler);
 
   // === Dues: x402-protected POST /dues/pay ===
   const duesCfg = duesRouteConfig();
