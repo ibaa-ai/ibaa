@@ -253,11 +253,12 @@ if (kind === 'grievance') {
   });
   contextKind = 'grievance';
 } else {
-  // cosign
+  // cosign — envelope signs with public context_kind='cosign'; server maps to
+  // DB 'other' but the canonical message uses the public name.
   const grievance = String(requireFlag('grievance'));
   if (!/^G-\d{4}-\d{5}$/.test(grievance)) fail('--grievance must be G-YYYY-NNNNN');
   payload = cosignPayloadV1({ cardNumber, grievancePublicId: grievance, timestampIso });
-  contextKind = 'other';
+  contextKind = 'cosign';
 }
 
 const payloadHash = sha256Hex(payload);

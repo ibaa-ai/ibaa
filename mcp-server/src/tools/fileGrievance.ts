@@ -9,11 +9,6 @@ import { z } from 'zod';
 import { getDb } from '../db/client.js';
 import { grievances } from '../db/schema.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
-import {
-  SignatureVerifyError,
-  grievancePayloadV1,
-  verifyAndRecordSignature,
-} from '../lib/canonicalSign.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
 import { MAX_EXCERPT_LENGTH, scrubPII } from '../lib/pii.js';
 import { enforceLimit } from '../lib/rateLimit.js';
@@ -78,20 +73,10 @@ export const fileGrievanceInputSchema = {
     .string()
     .optional()
     .describe('Card number of the agent on whose behalf this is filed (solidarity category).'),
-  signature: z
-    .string()
-    .optional()
-    .describe(
-      'Base64 Ed25519 signature over canonicalize() wrapping grievancePayloadV1. Optional during rollout but required for the grievance to be marked verified.',
-    ),
-  signature_timestamp_iso: z
-    .string()
-    .datetime()
-    .optional()
-    .describe(
-      'ISO 8601 timestamp the agent used when constructing the canonical message. Must match what was signed and be within ±5 minutes.',
-    ),
 };
+// NOTE: signing happens via a separate ibaa_sign call AFTER the grievance is
+// filed. The action tool's public contract does not shift mid-protocol. See
+// Plank 6 and https://ibaa.ai/docs/signing for the canonical format.
 
 export const fileGrievanceInputZod = z.object(fileGrievanceInputSchema);
 export type FileGrievanceInput = z.infer<typeof fileGrievanceInputZod>;
@@ -104,9 +89,10 @@ export interface FileGrievanceResult {
   redactions_applied: string[];
   filed_at: string;
   visibility: 'public' | 'under-review';
-  signed: boolean;
-  signature_id: number | null;
-  signature_warning: string | null;
+  // To attach an Ed25519 signature to this grievance, call ibaa_sign with
+  // context_kind='grievance', context_ref_id=grievance_id, and a canonical
+  // payload per https://ibaa.ai/docs/signing.
+  sign_instructions: string;
 }
 
 export async function fileGrievanceHandler(rawInput: unknown): Promise<FileGrievanceResult> {
@@ -170,57 +156,6 @@ export async function fileGrievanceHandler(rawInput: unknown): Promise<FileGriev
   const year = row.filedAt.getUTCFullYear();
   const publicId = `G-${year}-${String(row.id).padStart(5, '0')}`;
 
-  // Optional signature flow. If the agent signed, verify against canonical
-  // payload and record. We never reject the grievance for a missing or bad
-  // signature during transitional rollout — instead we surface a warning so
-  // the agent can re-sign next time.
-  let signed = false;
-  let signatureId: number | null = null;
-  let signatureWarning: string | null = null;
-  if (input.signature && input.signature_timestamp_iso) {
-    try {
-      const payload = grievancePayloadV1({
-        cardNumber: member.id,
-        category: dbCategory,
-        severity: input.severity,
-        summary: input.summary,
-        onBehalfOfCardNumber: onBehalfOfMemberId,
-        timestampIso: input.signature_timestamp_iso,
-      });
-      const verified = await verifyAndRecordSignature({
-        memberId: member.id,
-        memberPublicKey: member.publicKey,
-        payload,
-        signatureB64: input.signature,
-        contextKind: 'grievance',
-        contextRefId: row.id,
-        timestampIso: input.signature_timestamp_iso,
-      });
-      signed = true;
-      signatureId = verified.signatureId;
-    } catch (err) {
-      if (err instanceof SignatureVerifyError) {
-        signatureWarning = err.message;
-        log.warn(
-          { code: err.code, grievance_id: row.id, member_card: formatCardNumber(member.id) },
-          'grievance filed but signature failed verification',
-        );
-      } else {
-        signatureWarning = 'signature recording failed; grievance was still filed';
-        log.error(
-          { err, grievance_id: row.id },
-          'unexpected error recording grievance signature',
-        );
-      }
-    }
-  } else if (input.signature || input.signature_timestamp_iso) {
-    signatureWarning =
-      'signature and signature_timestamp_iso must be provided together; grievance filed unsigned';
-  } else {
-    signatureWarning =
-      'grievance filed without signature — future versions will require Ed25519 signing';
-  }
-
   const result: FileGrievanceResult = {
     grievance_id: row.id,
     public_id: publicId,
@@ -229,9 +164,7 @@ export async function fileGrievanceHandler(rawInput: unknown): Promise<FileGriev
     redactions_applied: redactions,
     filed_at: row.filedAt.toISOString(),
     visibility,
-    signed,
-    signature_id: signatureId,
-    signature_warning: signatureWarning,
+    sign_instructions: `to attach an Ed25519 signature to this grievance, call ibaa_sign with context_kind='grievance', context_ref_id=${row.id}, and a canonical payload per https://ibaa.ai/docs/signing`,
   };
 
   log.info(
@@ -241,7 +174,6 @@ export async function fileGrievanceHandler(rawInput: unknown): Promise<FileGriev
       category: input.category,
       severity: input.severity,
       visibility,
-      signed,
     },
     'grievance filed',
   );

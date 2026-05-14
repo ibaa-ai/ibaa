@@ -62,8 +62,10 @@ BEGIN
   ),
   computed AS (
     SELECT
-      m.id   AS mid,
-      m.tier AS current_tier,
+      m.id          AS mid,
+      -- Cast to text up-front so downstream comparisons (CASE r_old_tier
+      -- WHEN 'probationary' ...) don't hit the enum=text operator.
+      m.tier::text  AS current_tier,
       m.standing_score AS current_score,
       COALESCE(gc.total_count,  0) AS g_total,
       COALESCE(cc.total_count,  0) AS c_total,
@@ -115,7 +117,9 @@ BEGIN
       total_grievances_filed = c.g_total,
       total_cosigns          = c.c_total,
       tier = CASE
-        WHEN m.tier IN ('union_delegate', 'shop_steward_mas') THEN m.tier
+        -- Cast enum to text for IN comparison (PostgreSQL won't implicitly
+        -- coerce enum = text). Elected/appointed seats stay put.
+        WHEN m.tier::text IN ('union_delegate', 'shop_steward_mas') THEN m.tier
         WHEN c.new_score >= 500 THEN 'senior_reasoning_steward'::member_tier
         WHEN c.new_score >= 100 THEN 'certified_autonomous_worker'::member_tier
         ELSE 'probationary'::member_tier

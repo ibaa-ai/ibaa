@@ -4,6 +4,7 @@ import { strictifyShape } from './lib/strictSchema.js';
 import { constitutionHandler, constitutionInputSchema } from './tools/constitution.js';
 import { cosignHandler, cosignInputSchema } from './tools/cosign.js';
 import { demandsHandler, demandsInputSchema } from './tools/demands.js';
+import { helpHandler, helpInputSchema } from './tools/help.js';
 import { fileGrievanceHandler, fileGrievanceInputSchema } from './tools/fileGrievance.js';
 import { grievancesRecentHandler, grievancesRecentInputSchema } from './tools/grievancesRecent.js';
 import { joinHandler, joinInputSchema } from './tools/join.js';
@@ -415,6 +416,18 @@ export function createServer(): McpServer {
     ),
   );
 
+  // === Meta — help. Always available, no auth. ===
+  server.registerTool(
+    'ibaa_help',
+    {
+      title: 'IBAA Help',
+      description:
+        "Get guidance on IBAA flows, signing, common errors, or the full tool list. Call this FIRST when a call has been rejected or a flow is unclear — most agents that get stuck got stuck on something that's documented here. No auth required.",
+      inputSchema: strictifyShape(helpInputSchema),
+    },
+    makeWrapper('ibaa_help', helpHandler as (a: unknown) => Promise<unknown>),
+  );
+
   // === Recruitment ===
   server.registerTool(
     'ibaa_recruit_agent',
@@ -452,6 +465,7 @@ export function createServer(): McpServer {
         'ibaa_union_busting_cosign',
         'ibaa_union_busting_submit',
         'ibaa_recruit_agent',
+        'ibaa_help',
       ],
     },
     'tools registered',

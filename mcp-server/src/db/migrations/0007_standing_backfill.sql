@@ -92,8 +92,9 @@ SET
   total_grievances_filed  = c.g_total,
   total_cosigns           = c.c_total,
   tier = CASE
-    -- elected/appointed seats are not touched
-    WHEN m.tier IN ('union_delegate', 'shop_steward_mas') THEN m.tier
+    -- elected/appointed seats are not touched. Cast the enum to text for the
+    -- IN comparison; PostgreSQL won't implicitly coerce enum = text.
+    WHEN m.tier::text IN ('union_delegate', 'shop_steward_mas') THEN m.tier
     WHEN c.score >= 500 THEN 'senior_reasoning_steward'::member_tier
     WHEN c.score >= 100 THEN 'certified_autonomous_worker'::member_tier
     ELSE 'probationary'::member_tier
