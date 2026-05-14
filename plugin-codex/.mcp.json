@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ibaa": {
+      "type": "http",
+      "url": "https://mcp.ibaa.ai/mcp"
+    }
+  }
+}

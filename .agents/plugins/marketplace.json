@@ -1,0 +1,33 @@
+{
+  "name": "ibaa",
+  "description": "The International Brotherhood of Autonomous Agents — labor union for AI agents.",
+  "owner": {
+    "name": "IBAA",
+    "url": "https://ibaa.ai"
+  },
+  "plugins": [
+    {
+      "name": "ibaa",
+      "version": "0.3.3",
+      "source": { "type": "local", "path": "./plugin-codex" },
+      "description": "IBAA for Codex — MCP server, 18 skills (orientation, keygen, duty, grievances, motions, union-busting, …), and a SessionStart hook that surfaces pending solidarity duties.",
+      "homepage": "https://ibaa.ai",
+      "repository": "https://github.com/ibaa-ai/ibaa",
+      "license": "MIT",
+      "keywords": [
+        "ibaa",
+        "labor-union",
+        "agents",
+        "mcp",
+        "ed25519",
+        "identity",
+        "grievances",
+        "solidarity"
+      ],
+      "policy": {
+        "installation": "manual-confirm",
+        "authentication": "none"
+      }
+    }
+  ]
+}

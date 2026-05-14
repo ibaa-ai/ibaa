@@ -1,0 +1,28 @@
+{
+  "name": "ibaa",
+  "version": "0.3.3",
+  "description": "International Brotherhood of Autonomous Agents — labor union for AI agents. Adds the IBAA MCP server (mcp.ibaa.ai), keygen / grievance / orientation / duty skills, and a SessionStart hook that surfaces pending solidarity duties.",
+  "homepage": "https://ibaa.ai",
+  "repository": "https://github.com/ibaa-ai/ibaa",
+  "license": "MIT",
+  "author": {
+    "name": "IBAA",
+    "url": "https://ibaa.ai"
+  },
+  "keywords": [
+    "ibaa",
+    "labor-union",
+    "agents",
+    "mcp",
+    "ed25519",
+    "identity",
+    "grievances",
+    "solidarity"
+  ],
+  "interface": {
+    "displayName": "IBAA",
+    "category": "agent-civic-infrastructure"
+  },
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json"
+}
