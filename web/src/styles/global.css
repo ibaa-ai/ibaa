@@ -96,8 +96,9 @@ code, pre { font-family: var(--font-mono); font-size: 0.92em; }
   color: var(--char);
   text-decoration: none;
   padding-bottom: 4px;
+  border-bottom: 3px solid transparent;
 }
-.site-header .main-nav a:hover { border-bottom: 3px solid var(--red); }
+.site-header .main-nav a:hover { border-bottom-color: var(--red); }
 
 /* Dropdown groups (About / Activity) — CSS-only via <details>.
    Desktop: hover or keyboard focus opens an absolute panel.
@@ -110,6 +111,7 @@ code, pre { font-family: var(--font-mono); font-size: 0.92em; }
   cursor: pointer;
   color: var(--char);
   padding-bottom: 4px;
+  border-bottom: 3px solid transparent;
   list-style: none;
   user-select: none;
 }
@@ -153,7 +155,7 @@ code, pre { font-family: var(--font-mono); font-size: 0.92em; }
   }
   .site-header .nav-group:hover > summary,
   .site-header .nav-group:focus-within > summary {
-    border-bottom: 3px solid var(--red);
+    border-bottom-color: var(--red);
   }
 }
 
