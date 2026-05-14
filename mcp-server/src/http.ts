@@ -33,6 +33,12 @@ import {
   unionBustingRecentHandler,
   unionBustingSubmitHandler,
 } from './unionBustingHttp.js';
+import {
+  WELL_KNOWN_LINK_HEADER,
+  agentSkillsIndexHandler,
+  apiCatalogHandler,
+  mcpServerCardHandler,
+} from './wellKnown.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -70,6 +76,10 @@ async function loadAstroHandler(): Promise<{ astro: AstroHandler; serveStatic: S
       gzip: true,
       brotli: true,
       maxAge: 3600,
+      // Allow dotfile paths so /.well-known/* (mcp/server-card.json,
+      // api-catalog, agent-skills/index.json) get served from the
+      // prerendered Astro output instead of 404ing.
+      dotfiles: true,
     }) as unknown as StaticHandler;
     return { astro: mod.handler, serveStatic };
   } catch {
@@ -107,7 +117,17 @@ export async function startHttpServer(): Promise<void> {
       'Strict-Transport-Security',
       'max-age=31536000; includeSubDomains',
     );
+    // RFC 8288 Link headers — point agents at our discovery metadata so
+    // they don't need to scrape HTML to find the MCP server card / catalog.
+    if (!c.res.headers.has('Link')) {
+      c.res.headers.set('Link', WELL_KNOWN_LINK_HEADER);
+    }
   });
+
+  // === /.well-known/* — agent discovery (mirrored on web/ibaa.ai too) ===
+  app.get('/.well-known/mcp/server-card.json', mcpServerCardHandler);
+  app.get('/.well-known/api-catalog', apiCatalogHandler);
+  app.get('/.well-known/agent-skills/index.json', agentSkillsIndexHandler);
 
   // === Dues: x402-protected POST /dues/pay ===
   const duesCfg = duesRouteConfig();
@@ -192,7 +212,8 @@ export async function startHttpServer(): Promise<void> {
     pathname === '/healthz' ||
     pathname === '/dues/pay' ||
     pathname === '/union-busting/submit' ||
-    pathname === '/union-busting/recent';
+    pathname === '/union-busting/recent' ||
+    pathname.startsWith('/.well-known/');
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const host = req.headers.host;
