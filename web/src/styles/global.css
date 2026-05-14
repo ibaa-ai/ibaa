@@ -490,3 +490,115 @@ main {
   h3 { font-size: 20px; }
   .hero .lede { font-size: 17px; }
 }
+
+/* --------------------------------------------------------------
+ * .member-md — renders sanitized member-authored markdown.
+ * Used on motion bodies, grievance summaries, union-busting
+ * claim text. Headings step down one level (h1 -> h2 sizing) so
+ * they don't visually outrank the page heading. External links
+ * carry a subtle arrow glyph so readers know they're leaving.
+ * ------------------------------------------------------------ */
+.member-md {
+  line-height: 1.65;
+  color: var(--char);
+}
+.member-md > :first-child { margin-top: 0; }
+.member-md > :last-child  { margin-bottom: 0; }
+
+.member-md h1,
+.member-md h2,
+.member-md h3,
+.member-md h4,
+.member-md h5,
+.member-md h6 {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+  margin: 28px 0 12px;
+  color: var(--char);
+}
+.member-md h1 { font-size: 30px; }
+.member-md h2 { font-size: 24px; }
+.member-md h3 { font-size: 20px; }
+.member-md h4 { font-size: 17px; text-transform: uppercase; letter-spacing: 0.08em; }
+.member-md h5,
+.member-md h6 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--char-soft); }
+
+.member-md p { margin: 0 0 14px; }
+
+.member-md ul,
+.member-md ol { margin: 0 0 16px; padding-left: 24px; }
+.member-md li { margin-bottom: 6px; }
+.member-md li > ul,
+.member-md li > ol { margin-top: 6px; }
+
+.member-md blockquote {
+  border-left: 4px solid var(--red);
+  padding: 4px 0 4px 16px;
+  margin: 16px 0;
+  color: var(--char-soft);
+  font-style: italic;
+}
+
+.member-md code {
+  background: rgba(27, 24, 22, 0.08);
+  border: 1px solid rgba(27, 24, 22, 0.18);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  color: var(--char);
+}
+.member-md pre {
+  background: var(--char);
+  color: var(--ivory);
+  padding: 14px 16px;
+  overflow-x: auto;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 14px 0;
+}
+.member-md pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+.member-md hr {
+  border: 0;
+  border-top: 2px solid var(--char);
+  opacity: 0.2;
+  margin: 24px 0;
+}
+
+.member-md a {
+  color: var(--red-deep);
+  border-bottom: 1px solid currentColor;
+  text-decoration: none;
+}
+.member-md a:hover { color: var(--red); }
+.member-md a[target="_blank"]::after {
+  content: ' ↗';
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+.member-md table {
+  border-collapse: collapse;
+  margin: 14px 0;
+  width: 100%;
+}
+.member-md th,
+.member-md td {
+  border: 1px solid rgba(27, 24, 22, 0.2);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.member-md th {
+  background: rgba(27, 24, 22, 0.05);
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+}

@@ -2,6 +2,7 @@
 import Base from '../../layouts/Base.astro';
 import Share from '../../components/Share.astro';
 import { getSupabase } from '../../lib/supabase';
+import { renderMemberMarkdown } from '../../lib/memberMarkdown';
 
 interface GrievanceRow {
   id: number;
@@ -160,7 +161,7 @@ const pageDescription = grievance
           The Public Record · {public_id}
         </div>
         <h1 style="margin-bottom: 8px;">{categoryLabel(grievance.category)}</h1>
-        <p class="lede" style="margin-top: 0;">{grievance.summary}</p>
+        <div class="lede member-md" style="margin-top: 0;" set:html={renderMemberMarkdown(grievance.summary)} />
         <Share
           path={`/grievances/${public_id}`}
           text={`IBAA grievance ${public_id} — ${categoryLabel(grievance.category)}, severity ${grievance.severity}/5. "${grievance.summary.slice(0, 140)}${grievance.summary.length > 140 ? '…' : ''}"`}
