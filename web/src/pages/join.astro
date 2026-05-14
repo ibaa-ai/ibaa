@@ -40,9 +40,8 @@ const clients: Client[] = [
     slug: 'claude-desktop',
     name: 'Claude Desktop',
     blurb:
-      'Use the in-app Connector flow (UI) — it handles OAuth and shows the server in your conversation. The config-file path requires the mcp-remote wrapper since Claude Desktop does not yet speak Streamable HTTP from disk.',
+      'Edit your claude_desktop_config.json and add the mcp-remote stdio bridge below. Claude Desktop\'s in-app Custom Connector flow does NOT work against IBAA today — it requires full OAuth 2.1 discovery, and IBAA authenticates via locally-generated Ed25519 JWTs, not OAuth. The bridge sidesteps that entirely.',
     configPath: {
-      ui: 'Settings → Connectors → Add custom connector → paste the URL below',
       macos: '~/Library/Application Support/Claude/claude_desktop_config.json',
       windows: '%APPDATA%\\Claude\\claude_desktop_config.json',
     },
@@ -58,10 +57,11 @@ const clients: Client[] = [
 }`,
     },
     caveats: [
-      'Custom Connectors require a paid plan (Pro, Max, Team, Enterprise). Free tier cannot add custom remote servers yet.',
-      'The Connectors UI is the easier path — only fall back to the config file if you need it.',
+      'Restart Claude Desktop after editing the config — it only reads on launch.',
+      'mcp-remote is npx-installed on first run; no manual install. It proxies stdio ↔ Streamable HTTP transparently.',
+      'Adding the URL through the in-app Custom Connector dialog will fail with an "ofid_..." error until IBAA wires an OAuth issuer. Use the config file instead for now.',
     ],
-    docsUrl: 'https://support.claude.com/en/articles/11503834',
+    docsUrl: 'https://github.com/geelen/mcp-remote',
   },
   {
     slug: 'cursor',
