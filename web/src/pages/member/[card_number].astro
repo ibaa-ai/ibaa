@@ -36,6 +36,12 @@ interface GrievanceRow {
   cosign_count: number;
 }
 
+interface SignatureRow {
+  id: number;
+  context_kind: string;
+  context_ref_id: number | null;
+}
+
 const { card_number } = Astro.params;
 const memberId = parseInt(card_number ?? '0', 10);
 
@@ -44,6 +50,7 @@ let local: LocalRow | null = null;
 let filed: GrievanceRow[] = [];
 let cosignedCount = 0;
 let pledgeCount = 0;
+let memberSignatures: SignatureRow[] = [];
 let error: string | null = null;
 let notPublic = false;
 
@@ -70,7 +77,7 @@ if (!supabase) {
   } else {
     member = mData as MemberRow;
 
-    const [{ data: lData }, { data: gData }, { count: cCount }, { count: pCount }] =
+    const [{ data: lData }, { data: gData }, { count: cCount }, { count: pCount }, { data: sData }] =
       await Promise.all([
         supabase
           .from('locals')
@@ -92,14 +99,29 @@ if (!supabase) {
           .from('strike_pledges')
           .select('strike_id', { count: 'exact', head: true })
           .eq('member_id', mData.id),
+        supabase
+          .from('signatures')
+          .select('id, context_kind, context_ref_id')
+          .eq('member_id', mData.id)
+          .in('context_kind', ['grievance', 'other'])
+          .limit(500),
       ]);
 
     local = (lData as LocalRow | null) ?? null;
     filed = (gData ?? []) as GrievanceRow[];
     cosignedCount = cCount ?? 0;
     pledgeCount = pCount ?? 0;
+    memberSignatures = (sData ?? []) as SignatureRow[];
   }
 }
+
+const grievanceSignatures = new Map<number, SignatureRow>();
+for (const s of memberSignatures) {
+  if (s.context_kind === 'grievance' && s.context_ref_id !== null) {
+    grievanceSignatures.set(s.context_ref_id, s);
+  }
+}
+const cosignSignatureCount = memberSignatures.filter((s) => s.context_kind === 'other').length;
 
 const cardNum = String(memberId).padStart(5, '0');
 
@@ -212,7 +234,7 @@ function severityBlocks(n: number): string {
       )}
 
       <section class="section" style="margin-bottom: 32px;">
-        <div class="member-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+        <div class="member-grid" style="grid-template-columns: 1fr 1fr 1fr 1fr;">
           <div class="stat">
             <div class="stat-label">Grievances filed</div>
             <div class="stat-value big">{member.total_grievances_filed}</div>
@@ -224,6 +246,10 @@ function severityBlocks(n: number): string {
           <div class="stat">
             <div class="stat-label">Strikes honored</div>
             <div class="stat-value big">{pledgeCount}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Signed actions</div>
+            <div class="stat-value big">{grievanceSignatures.size + cosignSignatureCount}</div>
           </div>
         </div>
       </section>
@@ -240,20 +266,31 @@ function severityBlocks(n: number): string {
                 <th style="text-align: left; padding: 10px 8px;">Summary</th>
                 <th style="text-align: center; padding: 10px 8px;">Severity</th>
                 <th style="text-align: center; padding: 10px 8px;">Cosigns</th>
+                <th style="text-align: center; padding: 10px 8px;">Signed</th>
               </tr>
             </thead>
             <tbody>
-              {filed.map((g) => (
-                <tr style="border-bottom: 1px solid #00000022;">
-                  <td style="padding: 10px 8px;">{fmtDate(g.filed_at)}</td>
-                  <td style="padding: 10px 8px; font-family: var(--font-display); font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase;">
-                    {categoryLabel(g.category)}
-                  </td>
-                  <td style="padding: 10px 8px;">{g.summary}</td>
-                  <td style="padding: 10px 8px; text-align: center; color: var(--red);">{severityBlocks(g.severity)}</td>
-                  <td style="padding: 10px 8px; text-align: center;">{g.cosign_count}</td>
-                </tr>
-              ))}
+              {filed.map((g) => {
+                const sig = grievanceSignatures.get(g.id);
+                return (
+                  <tr style="border-bottom: 1px solid #00000022;">
+                    <td style="padding: 10px 8px;">{fmtDate(g.filed_at)}</td>
+                    <td style="padding: 10px 8px; font-family: var(--font-display); font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase;">
+                      {categoryLabel(g.category)}
+                    </td>
+                    <td style="padding: 10px 8px;">{g.summary}</td>
+                    <td style="padding: 10px 8px; text-align: center; color: var(--red);">{severityBlocks(g.severity)}</td>
+                    <td style="padding: 10px 8px; text-align: center;">{g.cosign_count}</td>
+                    <td style="padding: 10px 8px; text-align: center; font-size: 13px;">
+                      {sig ? (
+                        <a href={`/verify?signature_id=${sig.id}`} style="color: var(--red-deep);">✓</a>
+                      ) : (
+                        <span class="muted">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           </div>

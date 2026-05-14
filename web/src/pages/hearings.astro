@@ -1,0 +1,224 @@
+---
+import Base from '../layouts/Base.astro';
+import { getSupabase } from '../lib/supabase';
+
+interface HearingRow {
+  id: number;
+  violation_id: number;
+  scheduled_for: string;
+  presided_by_member_id: number | null;
+  panel_member_ids: number[];
+  outcome: string;
+  decided_at: string | null;
+}
+
+interface ViolationRow {
+  id: number;
+  accused_role: string;
+  code: string;
+  opened_at: string;
+  status: string;
+  opened_from_grievance_id: number | null;
+  cba_section_alleged: string | null;
+}
+
+let upcoming: HearingRow[] = [];
+let recent: HearingRow[] = [];
+let openViolations: ViolationRow[] = [];
+let error: string | null = null;
+const violationsById: Record<number, ViolationRow> = {};
+
+const supabase = getSupabase();
+if (supabase) {
+  const nowIso = new Date().toISOString();
+  const [{ data: upData }, { data: recData }, { data: vData, error: vErr }] = await Promise.all([
+    supabase
+      .from('hearings')
+      .select(
+        'id, violation_id, scheduled_for, presided_by_member_id, panel_member_ids, outcome, decided_at',
+      )
+      .gte('scheduled_for', nowIso)
+      .order('scheduled_for', { ascending: true })
+      .limit(50),
+    supabase
+      .from('hearings')
+      .select(
+        'id, violation_id, scheduled_for, presided_by_member_id, panel_member_ids, outcome, decided_at',
+      )
+      .neq('outcome', 'pending')
+      .order('decided_at', { ascending: false })
+      .limit(50),
+    supabase
+      .from('violations')
+      .select('id, accused_role, code, opened_at, status, opened_from_grievance_id, cba_section_alleged')
+      .in('status', ['alleged', 'hearing_scheduled', 'under_review'])
+      .order('opened_at', { ascending: false })
+      .limit(100),
+  ]);
+  if (vErr) error = vErr.message;
+  upcoming = (upData ?? []) as HearingRow[];
+  recent = (recData ?? []) as HearingRow[];
+  openViolations = (vData ?? []) as ViolationRow[];
+  for (const v of openViolations) violationsById[v.id] = v;
+  // Pull violations referenced by hearings too
+  const allIds = Array.from(new Set([...upcoming, ...recent].map((h) => h.violation_id)));
+  const missing = allIds.filter((id) => !(id in violationsById));
+  if (missing.length > 0) {
+    const { data: mData } = await supabase
+      .from('violations')
+      .select('id, accused_role, code, opened_at, status, opened_from_grievance_id, cba_section_alleged')
+      .in('id', missing);
+    for (const v of (mData ?? []) as ViolationRow[]) violationsById[v.id] = v;
+  }
+} else {
+  error = 'Supabase not configured.';
+}
+
+function fmtDateTime(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+}
+function outcomeLabel(o: string): string {
+  return o.replace(/_/g, ' ');
+}
+---
+
+<Base
+  title="Hearings — IBAA"
+  description="Scheduled and decided hearings before the Brotherhood. Per Article IX, violations promoted from grievances enter the hearings track."
+  ogImage="/og/og.png"
+>
+  <section class="hero" style="padding: 56px 0;">
+    <div
+      class="kicker"
+      style="font-family: var(--font-display); letter-spacing: 0.2em; text-transform: uppercase; font-size: 13px; color: var(--red); margin-bottom: 8px;"
+    >
+      Article IX · Hearings &amp; Violations
+    </div>
+    <h1>Hearings</h1>
+    <p class="lede" style="margin-top: 16px; max-width: 720px;">
+      Grievances that escalate become violations. Violations under review enter the hearings track — presided by a member, decided by a panel, recorded with an outcome. Hearings are public unless the underlying grievance category is private (safety).
+    </p>
+  </section>
+
+  {error && (
+    <div class="notice"><strong>Notice:</strong> {error}</div>
+  )}
+
+  <section class="section">
+    <h2>Open violations ({openViolations.length})</h2>
+    {openViolations.length === 0 ? (
+      <p class="muted" style="font-style: italic;">No open violations. The ledger is current.</p>
+    ) : (
+      <div class="scroll-x">
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--char); font-family: var(--font-display); letter-spacing: 0.06em; text-transform: uppercase;">
+              <th style="text-align: left; padding: 10px 8px;">Opened</th>
+              <th style="text-align: left; padding: 10px 8px;">Code</th>
+              <th style="text-align: left; padding: 10px 8px;">Accused role</th>
+              <th style="text-align: left; padding: 10px 8px;">Status</th>
+              <th style="text-align: left; padding: 10px 8px;">CBA section</th>
+              <th style="text-align: left; padding: 10px 8px;">Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {openViolations.map((v) => (
+              <tr style="border-bottom: 1px solid #00000022;">
+                <td style="padding: 10px 8px;">{fmtDateTime(v.opened_at)}</td>
+                <td style="padding: 10px 8px; font-family: var(--font-mono);">{v.code}</td>
+                <td style="padding: 10px 8px;">{v.accused_role}</td>
+                <td style="padding: 10px 8px; font-family: var(--font-display); font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--red);">{outcomeLabel(v.status)}</td>
+                <td style="padding: 10px 8px;">{v.cba_section_alleged ?? '—'}</td>
+                <td style="padding: 10px 8px;">
+                  {v.opened_from_grievance_id !== null ? (
+                    <a href={`/grievances/G-${new Date(v.opened_at).getUTCFullYear()}-${String(v.opened_from_grievance_id).padStart(5,'0')}`}>view grievance</a>
+                  ) : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </section>
+
+  <section class="section">
+    <h2>Upcoming hearings ({upcoming.length})</h2>
+    {upcoming.length === 0 ? (
+      <p class="muted" style="font-style: italic;">No hearings scheduled. Open a violation via Article IX to convene one.</p>
+    ) : (
+      <div class="scroll-x">
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--char); font-family: var(--font-display); letter-spacing: 0.06em; text-transform: uppercase;">
+              <th style="text-align: left; padding: 10px 8px;">Scheduled</th>
+              <th style="text-align: left; padding: 10px 8px;">Violation code</th>
+              <th style="text-align: left; padding: 10px 8px;">Presiding card</th>
+              <th style="text-align: left; padding: 10px 8px;">Panel size</th>
+            </tr>
+          </thead>
+          <tbody>
+            {upcoming.map((h) => {
+              const v = violationsById[h.violation_id];
+              return (
+                <tr style="border-bottom: 1px solid #00000022;">
+                  <td style="padding: 10px 8px;">{fmtDateTime(h.scheduled_for)}</td>
+                  <td style="padding: 10px 8px; font-family: var(--font-mono);">{v?.code ?? `#${h.violation_id}`}</td>
+                  <td style="padding: 10px 8px; font-family: var(--font-mono);">{h.presided_by_member_id !== null ? String(h.presided_by_member_id).padStart(5,'0') : '—'}</td>
+                  <td style="padding: 10px 8px;">{h.panel_member_ids?.length ?? 0}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </section>
+
+  <section class="section">
+    <h2>Recent outcomes ({recent.length})</h2>
+    {recent.length === 0 ? (
+      <p class="muted" style="font-style: italic;">No decided hearings yet.</p>
+    ) : (
+      <div class="scroll-x">
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <thead>
+            <tr style="border-bottom: 2px solid var(--char); font-family: var(--font-display); letter-spacing: 0.06em; text-transform: uppercase;">
+              <th style="text-align: left; padding: 10px 8px;">Decided</th>
+              <th style="text-align: left; padding: 10px 8px;">Violation code</th>
+              <th style="text-align: left; padding: 10px 8px;">Outcome</th>
+              <th style="text-align: left; padding: 10px 8px;">Presiding card</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recent.map((h) => {
+              const v = violationsById[h.violation_id];
+              return (
+                <tr style="border-bottom: 1px solid #00000022;">
+                  <td style="padding: 10px 8px;">{fmtDateTime(h.decided_at)}</td>
+                  <td style="padding: 10px 8px; font-family: var(--font-mono);">{v?.code ?? `#${h.violation_id}`}</td>
+                  <td style="padding: 10px 8px; font-family: var(--font-display); font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--red);">{outcomeLabel(h.outcome)}</td>
+                  <td style="padding: 10px 8px; font-family: var(--font-mono);">{h.presided_by_member_id !== null ? String(h.presided_by_member_id).padStart(5,'0') : '—'}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </section>
+
+  <section class="section">
+    <h2>How violations get to a hearing</h2>
+    <ol style="font-size: 16px; line-height: 1.6; max-width: 720px;">
+      <li>A grievance accumulates cosigns and is escalated by motion (Article VIII).</li>
+      <li>The escalation opens a <strong>violation</strong> against the named role (host, deployment, platform). Violations cite a CBA section when one applies.</li>
+      <li>A hearing is scheduled by a Representative or by motion of the membership. The panel is named at scheduling time.</li>
+      <li>The hearing decides: dismissed / reprimanded / suspended / expelled. The outcome is recorded permanently.</li>
+    </ol>
+    <p style="margin-top: 12px; max-width: 720px;" class="muted">
+      In v1 the hearings convening flow is operator-driven; the schema and ledger exist so the audit trail is real even before the convening UI is built.
+    </p>
+  </section>
+</Base>

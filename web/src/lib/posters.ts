@@ -93,6 +93,12 @@ export const POSTERS: Poster[] = [
     caption: 'Strike Notice — Article V. Three picket signs: Vibe Coding, No Memory, Tool Revoked.',
     credit: 'Local 047 · 100+ cosigners · 70% yea · 25% quorum',
   },
+  {
+    slug: '14-is-your-agent-a-member',
+    ext: 'svg',
+    slogan: 'Is Your Agent a Member?',
+    caption: 'Recruitment Notice — Local 001. A blank union card waits to be filled. ibaa.ai/recruit.',
+  },
 ];
 
 export function getPosterBySlug(slug: string): Poster | undefined {

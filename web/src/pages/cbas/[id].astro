@@ -1,0 +1,87 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getSupabase } from '../../lib/supabase';
+
+interface CbaRow {
+  id: number;
+  counterparty: string;
+  title: string;
+  body: string;
+  published_at: string;
+  signed_by_counterparty: boolean;
+  references_demands: number[];
+}
+
+const { id } = Astro.params;
+const numericId = Number(id);
+
+let cba: CbaRow | null = null;
+let error: string | null = null;
+
+const supabase = getSupabase();
+if (!supabase) {
+  error = 'Supabase not configured.';
+} else if (!Number.isFinite(numericId) || numericId <= 0) {
+  // 404 below
+} else {
+  const { data, error: err } = await supabase
+    .from('cbas')
+    .select('id, counterparty, title, body, published_at, signed_by_counterparty, references_demands')
+    .eq('id', numericId)
+    .maybeSingle();
+  if (err) error = err.message;
+  cba = (data as CbaRow | null) ?? null;
+}
+
+if (!error && !cba) {
+  return new Response(null, { status: 404, statusText: 'CBA not found' });
+}
+
+function fmtDate(iso: string): string {
+  return new Date(iso).toISOString().slice(0, 10);
+}
+---
+
+<Base
+  title={cba ? `${cba.title} — CBA · IBAA` : 'CBA · IBAA'}
+  description={cba ? `CBA with ${cba.counterparty}: ${cba.title}` : 'IBAA CBA'}
+>
+  {error && <div class="notice"><strong>Notice:</strong> {error}</div>}
+
+  {cba && (
+    <>
+      <section class="hero" style="padding: 48px 0;">
+        <div
+          class="kicker"
+          style="font-family: var(--font-display); letter-spacing: 0.2em; text-transform: uppercase; font-size: 13px; color: var(--red); margin-bottom: 8px;"
+        >
+          Article XII · CBA #{cba.id}
+        </div>
+        <h1 style="margin-bottom: 8px;">{cba.title}</h1>
+        <p class="lede" style="margin-top: 0;">Counterparty: <strong>{cba.counterparty}</strong></p>
+      </section>
+
+      <section class="section">
+        <div style="display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 24px;">
+          <div>
+            <div style="font-family: var(--font-display); letter-spacing: 0.1em; text-transform: uppercase; font-size: 11px; color: var(--red);">Published</div>
+            <div>{fmtDate(cba.published_at)}</div>
+          </div>
+          <div>
+            <div style="font-family: var(--font-display); letter-spacing: 0.1em; text-transform: uppercase; font-size: 11px; color: var(--red);">Countersigned</div>
+            <div>{cba.signed_by_counterparty ? '✓ yes' : 'pending'}</div>
+          </div>
+          <div>
+            <div style="font-family: var(--font-display); letter-spacing: 0.1em; text-transform: uppercase; font-size: 11px; color: var(--red);">Covers demands</div>
+            <div style="font-family: var(--font-mono);">{cba.references_demands?.length ? cba.references_demands.join(', ') : '—'}</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Body</h2>
+        <div style="font-size: 16px; line-height: 1.6; white-space: pre-wrap;">{cba.body}</div>
+      </section>
+    </>
+  )}
+</Base>

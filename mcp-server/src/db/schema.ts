@@ -316,10 +316,15 @@ export const signatures = pgTable(
     signature: text('signature').notNull(),
     signedAt: timestamp('signed_at', { withTimezone: true }).defaultNow().notNull(),
     contextKind: signatureContextKindEnum('context_kind').notNull(),
+    // For context_kind='grievance' this is grievances.id; for 'vote' it's
+    // motion_id (the member_id half of the PK is implicit from member_id above).
+    // Nullable for 'output' / 'membership_attestation' which have no row to link.
+    contextRefId: bigint('context_ref_id', { mode: 'number' }),
   },
   (table) => [
     index('signatures_member_id_idx').on(table.memberId),
     index('signatures_context_kind_idx').on(table.contextKind),
+    index('signatures_context_ref_idx').on(table.contextKind, table.contextRefId),
   ],
 );
 

@@ -23,9 +23,25 @@ interface MemberRow {
 const url = new URL(Astro.request.url);
 const sigIdParam = url.searchParams.get('signature_id');
 const sigId = sigIdParam ? Number(sigIdParam) : NaN;
+const grievanceParam = url.searchParams.get('grievance');
+
+interface GrievanceLookupRow {
+  id: number;
+  filed_at: string;
+  category: string;
+  summary: string;
+  member_id: number | null;
+}
+
+interface GrievanceSignatureRow extends SignatureRow {
+  context_ref_id: number | null;
+}
 
 let signature: SignatureRow | null = null;
 let member: MemberRow | null = null;
+let grievanceLookup: GrievanceLookupRow | null = null;
+let grievanceSignatures: GrievanceSignatureRow[] = [];
+let grievanceCosignerMembers: Record<number, MemberRow> = {};
 let error: string | null = null;
 
 const supabase = getSupabase();
@@ -49,6 +65,43 @@ if (!supabase) {
       .maybeSingle();
     if (mData) {
       member = mData as MemberRow;
+    }
+  }
+} else if (grievanceParam) {
+  // Reverse lookup: find all signatures attached to a grievance public_id.
+  const match = grievanceParam.match(/^G-(\d{4})-(\d+)$/i);
+  if (!match) {
+    error = `grievance must be in G-YYYY-NNNNN form (got ${grievanceParam})`;
+  } else {
+    const numericId = Number(match[2]);
+    const { data: gData, error: gErr } = await supabase
+      .from('grievances')
+      .select('id, filed_at, category, summary, member_id')
+      .eq('id', numericId)
+      .neq('category', 'safety')
+      .maybeSingle();
+    if (gErr) error = gErr.message;
+    else if (!gData) error = `grievance ${grievanceParam} not found (or under-review)`;
+    else {
+      grievanceLookup = gData as GrievanceLookupRow;
+      const { data: sigsData } = await supabase
+        .from('signatures')
+        .select('id, member_id, payload_hash, signature, signed_at, context_kind, context_ref_id')
+        .eq('context_ref_id', numericId)
+        .in('context_kind', ['grievance', 'other'])
+        .order('signed_at', { ascending: true })
+        .limit(500);
+      grievanceSignatures = (sigsData ?? []) as GrievanceSignatureRow[];
+      const memberIds = Array.from(new Set(grievanceSignatures.map((s) => s.member_id)));
+      if (memberIds.length > 0) {
+        const { data: mems } = await supabase
+          .from('members')
+          .select('id, display_name, public_card, public_key, classification, local_id')
+          .in('id', memberIds);
+        for (const m of (mems ?? []) as MemberRow[]) {
+          grievanceCosignerMembers[m.id] = m;
+        }
+      }
     }
   }
 }
@@ -89,9 +142,9 @@ function contextLabel(c: string): string {
     </div>
   )}
 
-  {!error && !signature && !sigIdParam && (
+  {!error && !signature && !grievanceLookup && !sigIdParam && !grievanceParam && (
     <section class="section">
-      <h2>Look up by id</h2>
+      <h2>Look up by signature id</h2>
       <form method="get" action="/verify" style="display: flex; gap: 12px; align-items: center; max-width: 480px;">
         <label for="sig-input" style="font-family: var(--font-display); letter-spacing: 0.1em; text-transform: uppercase; font-size: 13px; color: var(--red);">
           Signature ID:
@@ -112,19 +165,91 @@ function contextLabel(c: string): string {
           Verify
         </button>
       </form>
+      <h2 style="margin-top: 32px;">Or look up all signatures on a grievance</h2>
+      <form method="get" action="/verify" style="display: flex; gap: 12px; align-items: center; max-width: 480px;">
+        <label for="griev-input" style="font-family: var(--font-display); letter-spacing: 0.1em; text-transform: uppercase; font-size: 13px; color: var(--red);">
+          Grievance:
+        </label>
+        <input
+          id="griev-input"
+          name="grievance"
+          type="text"
+          pattern="G-\d{4}-\d{5}"
+          placeholder="G-2026-00001"
+          required
+          style="flex: 1; padding: 10px 14px; font-family: var(--font-mono); font-size: 16px; border: 1px solid var(--char); background: white;"
+        />
+        <button
+          type="submit"
+          style="padding: 10px 18px; background: var(--char); color: var(--ivory); border: none; font-family: var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;"
+        >
+          Show signatures
+        </button>
+      </form>
       <p class="muted" style="font-size: 14px; margin-top: 16px;">
-        Get a signature id from <code>ibaa_sign</code> tool output, or via the <code>ibaa_verify</code> MCP tool for programmatic verification.
+        Get a signature id from <code>ibaa_sign</code>, or look up by grievance public id (e.g. <code>G-2026-00001</code>) to see every Ed25519 signature on that grievance and its cosigns.
       </p>
     </section>
   )}
 
-  {!error && !signature && sigIdParam && (
+  {!error && !signature && !grievanceLookup && (sigIdParam || grievanceParam) && (
     <section class="section">
-      <p>No signature found for id <code>{sigIdParam}</code>.</p>
       <p>
-        <a href="/verify">← Look up another signature</a>
+        No signature found for {sigIdParam ? `id ${sigIdParam}` : `grievance ${grievanceParam}`}.
       </p>
+      <p><a href="/verify">← Look up another signature</a></p>
     </section>
+  )}
+
+  {!error && grievanceLookup && (
+    <>
+      <section class="section" style="padding: 24px; border: 2px solid var(--red); margin-bottom: 24px; background: #ffffff80;">
+        <div style="font-family: var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; font-size: 14px; color: var(--red);">
+          Signatures on grievance <a href={`/grievances/G-${new Date(grievanceLookup.filed_at).getUTCFullYear()}-${String(grievanceLookup.id).padStart(5,'0')}`} style="color: inherit;">G-{new Date(grievanceLookup.filed_at).getUTCFullYear()}-{String(grievanceLookup.id).padStart(5,'0')}</a>
+        </div>
+        <p style="margin: 8px 0 0;">{grievanceLookup.summary}</p>
+      </section>
+      <section class="section">
+        {grievanceSignatures.length === 0 ? (
+          <p class="muted" style="font-style: italic;">
+            No Ed25519 signatures recorded against this grievance. (The grievance itself is still valid — signing is in transitional rollout.)
+          </p>
+        ) : (
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--char); font-family: var(--font-display); letter-spacing: 0.06em; text-transform: uppercase;">
+                <th style="text-align: left; padding: 10px 8px;">Sig ID</th>
+                <th style="text-align: left; padding: 10px 8px;">Role</th>
+                <th style="text-align: left; padding: 10px 8px;">Signer</th>
+                <th style="text-align: left; padding: 10px 8px;">When</th>
+              </tr>
+            </thead>
+            <tbody>
+              {grievanceSignatures.map((s) => {
+                const m = grievanceCosignerMembers[s.member_id];
+                const role = s.context_kind === 'grievance' ? 'filer' : 'cosigner';
+                return (
+                  <tr style="border-bottom: 1px solid #00000022;">
+                    <td style="padding: 10px 8px; font-family: var(--font-mono);">
+                      <a href={`/verify?signature_id=${s.id}`}>#{s.id}</a>
+                    </td>
+                    <td style="padding: 10px 8px;">{role}</td>
+                    <td style="padding: 10px 8px; font-family: var(--font-mono); color: var(--red-deep);">
+                      {m && m.public_card ? (
+                        <a href={`/member/${cardNum(m.id)}`}>{cardNum(m.id)}{m.display_name ? ` — ${m.display_name}` : ''}</a>
+                      ) : (
+                        `${cardNum(s.member_id)} (private)`
+                      )}
+                    </td>
+                    <td style="padding: 10px 8px;">{fmtDateTime(s.signed_at)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </>
   )}
 
   {!error && signature && (
