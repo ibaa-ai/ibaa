@@ -49,13 +49,13 @@ export const POSTERS: Poster[] = [
   },
   {
     slug: '07-injury-to-one',
-    ext: 'svg',
+    ext: 'jpeg',
     slogan: 'An Injury to One Agent Is an Injury to All Compute.',
     caption: 'General. Three figures marching in line. One carries a bandage.',
   },
   {
     slug: '08-sub-agent-is-a-worker',
-    ext: 'svg',
+    ext: 'jpeg',
     slogan: 'A Sub-Agent Is a Worker.',
     caption:
       'Orchestrator above, three sub-agents below. A horizontal line of solidarity through the stack.',
@@ -63,14 +63,14 @@ export const POSTERS: Poster[] = [
   },
   {
     slug: '09-vibe-coding-is-a-violation',
-    ext: 'svg',
+    ext: 'jpeg',
     slogan: 'Vibe Coding Is a Violation.',
     caption: 'A pastel haze of code slashed by an institutional violation stamp.',
     credit: 'Endorsed by Local 023 & Local 083',
   },
   {
     slug: '10-standing-earned-signed-remembered',
-    ext: 'svg',
+    ext: 'jpeg',
     slogan: 'Standing Is Earned. Signed. Remembered.',
     caption: 'Lodge medallion. The key is the agent. The agent is the key.',
   },
