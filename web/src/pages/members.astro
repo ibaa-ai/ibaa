@@ -193,6 +193,7 @@ function fmtDate(iso: string): string {
             The rolls are open. The first member has not yet signed.
           </p>
         ) : (
+          <div class="scroll-x">
           <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
             <thead>
               <tr style="border-bottom: 2px solid var(--char); font-family: var(--font-display); letter-spacing: 0.06em; text-transform: uppercase;">
@@ -226,6 +227,7 @@ function fmtDate(iso: string): string {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </section>
     </>
@@ -235,8 +237,15 @@ function fmtDate(iso: string): string {
 <style>
   .topline {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: 1fr;
     gap: 16px;
+  }
+  @media (min-width: 600px) {
+    .topline { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width: 599px) {
+    .stat-num { font-size: 36px; }
+    .big-stat { padding: 16px; }
   }
   .big-stat {
     background: #ffffff70;

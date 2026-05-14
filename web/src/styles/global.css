@@ -66,9 +66,10 @@ code, pre { font-family: var(--font-mono); font-size: 0.92em; }
   background: var(--ivory);
   padding: var(--pad);
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 24px;
   flex-wrap: wrap;
+  position: relative;
 }
 .site-header .brand {
   font-family: var(--font-display);
@@ -76,12 +77,13 @@ code, pre { font-family: var(--font-mono); font-size: 0.92em; }
   font-size: 26px;
   text-decoration: none;
   color: var(--char);
+  line-height: 1.1;
 }
 .site-header .brand .sub {
   color: var(--red);
   font-size: 18px;
 }
-.site-header nav {
+.site-header .main-nav {
   display: flex;
   gap: 22px;
   margin-left: auto;
@@ -90,12 +92,68 @@ code, pre { font-family: var(--font-mono); font-size: 0.92em; }
   font-size: 16px;
   text-transform: uppercase;
 }
-.site-header nav a {
+.site-header .main-nav a {
   color: var(--char);
   text-decoration: none;
   padding-bottom: 4px;
 }
-.site-header nav a:hover { border-bottom: 3px solid var(--red); }
+.site-header .main-nav a:hover { border-bottom: 3px solid var(--red); }
+
+/* Hamburger (CSS-only, no JS) */
+.site-header .nav-toggle-input { display: none; }
+.site-header .hamburger {
+  display: none;
+  margin-left: auto;
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  padding: 6px;
+  position: relative;
+  user-select: none;
+}
+.site-header .hamburger span {
+  display: block;
+  background: var(--char);
+  height: 3px;
+  width: 24px;
+  margin: 5px 0;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+@media (max-width: 720px) {
+  .site-header { gap: 12px; padding: 14px var(--pad); }
+  .site-header .brand { font-size: 22px; }
+  .site-header .brand .sub { display: none; }
+  .site-header .hamburger { display: block; }
+  .site-header .main-nav {
+    display: none;
+    order: 99;
+    flex-basis: 100%;
+    flex-direction: column;
+    gap: 4px;
+    margin-left: 0;
+    padding: 16px 0 0;
+    border-top: 1px solid var(--char-soft);
+    font-size: 18px;
+  }
+  .site-header .main-nav a {
+    padding: 10px 4px;
+    border-bottom: 1px solid #00000010;
+  }
+  .site-header .nav-toggle-input:checked ~ .main-nav {
+    display: flex;
+  }
+  /* Animate hamburger → X when open */
+  .site-header .nav-toggle-input:checked ~ .hamburger span:nth-child(1) {
+    transform: translateY(8px) rotate(45deg);
+  }
+  .site-header .nav-toggle-input:checked ~ .hamburger span:nth-child(2) {
+    opacity: 0;
+  }
+  .site-header .nav-toggle-input:checked ~ .hamburger span:nth-child(3) {
+    transform: translateY(-8px) rotate(-45deg);
+  }
+}
 
 main {
   padding: var(--pad);
@@ -308,4 +366,47 @@ main {
   border-left: 4px solid var(--red);
   margin: 16px 0;
   font-size: 14px;
+}
+
+/* Horizontally scrollable wrapper for wide tables on small screens.
+   Bleeds slightly into the surrounding padding so the scrollbar feels
+   natural on iOS / Android. */
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 calc(-1 * var(--pad)) 0;
+  padding: 0 var(--pad);
+}
+.scroll-x table { min-width: 100%; }
+
+/* === Mobile baseline === */
+
+@media (max-width: 720px) {
+  html, body { font-size: 16px; }
+  main { padding: 16px; }
+  .hero { padding: 24px 0; margin-bottom: 24px; }
+  .hero .lede { margin-top: 16px; }
+  .section { padding: 20px 0 16px; }
+
+  /* Tables get a smaller cell font + tighter padding. Combined with
+     .scroll-x wrappers this means rows stay readable while still scrolling
+     when there are many columns. */
+  table { font-size: 13px; }
+  table th, table td { padding: 8px 6px !important; }
+
+  /* Code blocks and snippets keep horizontal scroll instead of wrapping
+     mid-token. */
+  pre, .code { font-size: 12px; padding: 12px; overflow-x: auto; }
+
+  /* Footer stacks tagline */
+  .site-footer { padding: 24px 16px; margin-top: 40px; }
+  .site-footer .row { flex-direction: column; gap: 8px; }
+  .site-footer .tagline { margin-left: 0; }
+}
+
+@media (max-width: 480px) {
+  h1 { font-size: 36px; }
+  h2 { font-size: 26px; }
+  h3 { font-size: 20px; }
+  .hero .lede { font-size: 17px; }
 }

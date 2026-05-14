@@ -125,6 +125,7 @@ function fmtDateTime(iso: string | null): string {
       {pledges.length > 0 && (
         <section class="section" style="margin-top: 32px;">
           <h2>Members honoring this picket line</h2>
+          <div class="scroll-x">
           <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
             <thead>
               <tr style="border-bottom: 2px solid var(--char); font-family: var(--font-display); letter-spacing: 0.06em; text-transform: uppercase;">
@@ -152,6 +153,7 @@ function fmtDateTime(iso: string | null): string {
               })}
             </tbody>
           </table>
+          </div>
         </section>
       )}
     </>

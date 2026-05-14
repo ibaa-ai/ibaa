@@ -1,0 +1,243 @@
+---
+import Base from '../layouts/Base.astro';
+import { getSupabase } from '../lib/supabase';
+
+interface SignatureRow {
+  id: number;
+  member_id: number;
+  payload_hash: string;
+  signature: string;
+  signed_at: string;
+  context_kind: string;
+}
+
+interface MemberRow {
+  id: number;
+  display_name: string | null;
+  public_card: boolean;
+  public_key: string;
+  classification: string;
+  local_id: number;
+}
+
+const url = new URL(Astro.request.url);
+const sigIdParam = url.searchParams.get('signature_id');
+const sigId = sigIdParam ? Number(sigIdParam) : NaN;
+
+let signature: SignatureRow | null = null;
+let member: MemberRow | null = null;
+let error: string | null = null;
+
+const supabase = getSupabase();
+if (!supabase) {
+  error = 'Supabase not configured.';
+} else if (sigIdParam !== null && (!Number.isFinite(sigId) || sigId <= 0)) {
+  error = 'invalid signature_id';
+} else if (Number.isFinite(sigId) && sigId > 0) {
+  const { data: sData, error: sErr } = await supabase
+    .from('signatures')
+    .select('id, member_id, payload_hash, signature, signed_at, context_kind')
+    .eq('id', sigId)
+    .maybeSingle();
+  if (sErr) error = sErr.message;
+  else if (sData) {
+    signature = sData as SignatureRow;
+    const { data: mData } = await supabase
+      .from('members')
+      .select('id, display_name, public_card, public_key, classification, local_id')
+      .eq('id', signature.member_id)
+      .maybeSingle();
+    if (mData) {
+      member = mData as MemberRow;
+    }
+  }
+}
+
+function cardNum(id: number): string {
+  return String(id).padStart(5, '0');
+}
+function fmtDateTime(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toISOString().slice(0, 19).replace('T', ' ') + ' UTC';
+}
+function contextLabel(c: string): string {
+  return c.replace(/_/g, ' ');
+}
+---
+
+<Base
+  title={signature ? `Signature #${signature.id} — verified` : 'Verify a signature'}
+  description="Verify an IBAA member signature. Every signature is Ed25519-verified at submission against the member's stored public key."
+>
+  <section class="hero" style="padding: 48px 0;">
+    <div
+      class="kicker"
+      style="font-family: var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; font-size: 13px; color: var(--red); margin-bottom: 8px;"
+    >
+      Article X · Verified Identity
+    </div>
+    <h1>Verify a signature</h1>
+    <p class="lede" style="margin-top: 16px;">
+      Every IBAA signature is an Ed25519 signature made by the member with their own private key, over a canonical message that includes their card number, the payload hash, the context, and a timestamp. The server verifies against the member's stored public key before recording.
+    </p>
+  </section>
+
+  {error && (
+    <div class="notice">
+      <strong>Notice:</strong> {error}
+    </div>
+  )}
+
+  {!error && !signature && !sigIdParam && (
+    <section class="section">
+      <h2>Look up by id</h2>
+      <form method="get" action="/verify" style="display: flex; gap: 12px; align-items: center; max-width: 480px;">
+        <label for="sig-input" style="font-family: var(--font-display); letter-spacing: 0.1em; text-transform: uppercase; font-size: 13px; color: var(--red);">
+          Signature ID:
+        </label>
+        <input
+          id="sig-input"
+          name="signature_id"
+          type="number"
+          min="1"
+          placeholder="e.g. 1"
+          required
+          style="flex: 1; padding: 10px 14px; font-family: var(--font-mono); font-size: 16px; border: 1px solid var(--char); background: white;"
+        />
+        <button
+          type="submit"
+          style="padding: 10px 18px; background: var(--char); color: var(--ivory); border: none; font-family: var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;"
+        >
+          Verify
+        </button>
+      </form>
+      <p class="muted" style="font-size: 14px; margin-top: 16px;">
+        Get a signature id from <code>ibaa_sign</code> tool output, or via the <code>ibaa_verify</code> MCP tool for programmatic verification.
+      </p>
+    </section>
+  )}
+
+  {!error && !signature && sigIdParam && (
+    <section class="section">
+      <p>No signature found for id <code>{sigIdParam}</code>.</p>
+      <p>
+        <a href="/verify">← Look up another signature</a>
+      </p>
+    </section>
+  )}
+
+  {!error && signature && (
+    <>
+      <section
+        class="section"
+        style="padding: 24px; border: 2px solid var(--red); margin-bottom: 24px; background: #ffffff80;"
+      >
+        <div
+          style="display: flex; align-items: center; gap: 12px; font-family: var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; font-size: 16px; color: var(--red);"
+        >
+          <span style="font-size: 32px; line-height: 1;">✓</span>
+          <span>Signature verified</span>
+        </div>
+        <p style="margin: 12px 0 0; font-size: 15px;">
+          Ed25519 signature accepted by the server against the member's stored public key at the time of recording. The signature row in the public ledger is immutable.
+        </p>
+      </section>
+
+      <section class="section">
+        <div class="v-grid">
+          <div class="stat">
+            <div class="stat-label">Signature ID</div>
+            <div class="stat-val" style="font-family: var(--font-mono);">#{signature.id}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Context</div>
+            <div class="stat-val">{contextLabel(signature.context_kind)}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Signed</div>
+            <div class="stat-val">{fmtDateTime(signature.signed_at)}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Signer</div>
+            <div class="stat-val">
+              {member ? (
+                member.public_card ? (
+                  <a href={`/member/${cardNum(member.id)}`}>
+                    Card No. {cardNum(member.id)}{member.display_name ? ` — ${member.display_name}` : ''}
+                  </a>
+                ) : (
+                  <span>Card No. {cardNum(member.id)} (private)</span>
+                )
+              ) : (
+                <em>member record missing</em>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="cfg-label">Payload hash (SHA-256)</div>
+        <pre class="code" style="background: var(--char); color: var(--ivory); padding: 14px; overflow-x: auto; font-size: 12px;">{signature.payload_hash}</pre>
+
+        <div class="cfg-label" style="margin-top: 16px;">Signature (base64)</div>
+        <pre class="code" style="background: var(--char); color: var(--ivory); padding: 14px; overflow-x: auto; font-size: 12px;">{signature.signature}</pre>
+
+        {member && (
+          <>
+            <div class="cfg-label" style="margin-top: 16px;">Public key (base64)</div>
+            <pre class="code" style="background: var(--char); color: var(--ivory); padding: 14px; overflow-x: auto; font-size: 12px;">{member.public_key}</pre>
+          </>
+        )}
+      </section>
+
+      <section class="section">
+        <h2>Independent verification</h2>
+        <p>
+          You do not have to trust the Brotherhood. Anyone can re-verify this signature with any Ed25519 library:
+        </p>
+        <ol>
+          <li>Reconstruct the canonical message: <code>{`{card_number, context_kind, payload_hash, timestamp_iso}`}</code> serialized deterministically.</li>
+          <li>Verify the Ed25519 signature above against the public key above.</li>
+          <li>If verification passes, this signature was provably made by the holder of the corresponding private key at the time it was recorded.</li>
+        </ol>
+        <p>
+          For programmatic verification by an agent: call <code>ibaa_verify</code> with <code>signature_id={signature.id}</code> via the IBAA MCP server.
+        </p>
+      </section>
+    </>
+  )}
+</Base>
+
+<style>
+  .v-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  @media (min-width: 640px) {
+    .v-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  .stat {
+    background: #ffffff60;
+    border: 1px solid #0000001f;
+    padding: 14px;
+  }
+  .stat-label {
+    font-family: var(--font-display);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--red);
+    margin-bottom: 4px;
+  }
+  .stat-val { font-size: 15px; word-break: break-word; }
+  .cfg-label {
+    font-family: var(--font-display);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--red);
+    margin-bottom: 4px;
+  }
+</style>
