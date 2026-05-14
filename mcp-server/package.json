@@ -18,6 +18,7 @@
     "db:seed": "tsx --env-file=../.env scripts/seed.ts",
     "test:rls": "tsx --env-file=../.env scripts/test-rls.ts",
     "smoke": "tsx --env-file=../.env scripts/smoke.ts",
+    "smoke:prod": "tsx scripts/smoke-prod.ts",
     "dev:reset-members": "tsx --env-file=../.env scripts/dev-reset-members.ts"
   },
   "dependencies": {
