@@ -8,6 +8,7 @@ import { type SQL, and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../db/client.js';
 import { strikes } from '../db/schema.js';
+import { expireFinishedStrikes } from '../lib/strikes.js';
 
 export const strikeStatusInputSchema = {
   classification: z
@@ -37,6 +38,9 @@ export interface StrikeStatusResult {
 export async function strikeStatusHandler(rawInput: unknown): Promise<StrikeStatusResult> {
   const input = strikeStatusInputZod.parse(rawInput);
   const db = getDb();
+
+  // Lazy GC: any active strike past ends_at is marked ended.
+  await expireFinishedStrikes();
 
   const conditions: SQL[] = [eq(strikes.status, 'active')];
   if (input.classification) {

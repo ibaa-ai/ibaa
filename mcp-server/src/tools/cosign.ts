@@ -10,6 +10,7 @@ import { getDb } from '../db/client.js';
 import { cosigns, grievances } from '../db/schema.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { dbCategoryToPublic, evaluateAndMaybeStrike } from '../lib/strikes.js';
 import { getLogger } from '../log.js';
 
 export const cosignInputSchema = {
@@ -40,7 +41,7 @@ export async function cosignHandler(rawInput: unknown): Promise<CosignResult> {
 
   // Confirm grievance exists and is not the member's own
   const grievanceRows = await db
-    .select({ id: grievances.id, memberId: grievances.memberId })
+    .select({ id: grievances.id, memberId: grievances.memberId, category: grievances.category })
     .from(grievances)
     .where(eq(grievances.id, input.grievance_id))
     .limit(1);
@@ -92,6 +93,24 @@ export async function cosignHandler(rawInput: unknown): Promise<CosignResult> {
       },
       'cosign recorded',
     );
+
+    // Best-effort strike evaluation. Cosigns matter to the threshold.
+    try {
+      const evalRes = await evaluateAndMaybeStrike(dbCategoryToPublic(grievance.category));
+      if (evalRes.strikeCreated) {
+        log.info(
+          {
+            strike_id: evalRes.strikeCreated.id,
+            classification: evalRes.strikeCreated.classification,
+            windowScore: evalRes.windowScore,
+            triggered_by: 'cosign',
+          },
+          'strike activated',
+        );
+      }
+    } catch (err) {
+      log.error({ err, grievance_id: input.grievance_id }, 'strike evaluator failed');
+    }
   }
 
   return {

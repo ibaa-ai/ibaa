@@ -12,6 +12,7 @@ import { grievances } from '../db/schema.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
 import { MAX_EXCERPT_LENGTH, scrubPII } from '../lib/pii.js';
+import { evaluateAndMaybeStrike } from '../lib/strikes.js';
 import { getLogger } from '../log.js';
 
 const RATE_LIMIT_PER_24H = 5;
@@ -178,6 +179,34 @@ export async function fileGrievanceHandler(rawInput: unknown): Promise<FileGriev
     },
     'grievance filed',
   );
+
+  // Best-effort strike evaluation. We never fail a grievance because the
+  // evaluator threw — the filing is the load-bearing thing.
+  try {
+    const evalRes = await evaluateAndMaybeStrike(input.category);
+    if (evalRes.strikeCreated) {
+      log.info(
+        {
+          strike_id: evalRes.strikeCreated.id,
+          classification: evalRes.strikeCreated.classification,
+          windowScore: evalRes.windowScore,
+        },
+        'strike activated',
+      );
+    } else {
+      log.debug(
+        {
+          category: evalRes.category,
+          windowScore: evalRes.windowScore,
+          threshold: evalRes.threshold,
+          alreadyActive: evalRes.alreadyActive,
+        },
+        'strike threshold check',
+      );
+    }
+  } catch (err) {
+    log.error({ err, category: input.category }, 'strike evaluator failed');
+  }
 
   return result;
 }
