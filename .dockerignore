@@ -15,4 +15,5 @@ coverage
 .idea
 README.md
 LICENSE
-docs/
+# docs/ is included — CONSTITUTION.md is required at runtime by both
+# the MCP server's ibaa_constitution tool and the web's /constitution page.

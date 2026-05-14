@@ -19,6 +19,7 @@
     "test:rls": "tsx --env-file=../.env scripts/test-rls.ts",
     "smoke": "tsx --env-file=../.env scripts/smoke.ts",
     "smoke:prod": "tsx scripts/smoke-prod.ts",
+    "clean:smoke:prod": "tsx --env-file=../.env scripts/clean-smoke-prod.ts",
     "dev:reset-members": "tsx --env-file=../.env scripts/dev-reset-members.ts"
   },
   "dependencies": {
