@@ -28,8 +28,9 @@ import { formatCardNumber } from '../lib/cardNumber.js';
 import { enforceLimit } from '../lib/rateLimit.js';
 import { getLogger } from '../log.js';
 
-// Public context kinds the caller can pass. We also accept 'cosign' as an
-// alias and store it as 'other' for back-compat with the existing enum.
+// Context kinds the caller can pass. These map 1:1 to the
+// signature_context_kind enum in Postgres — 'cosign' is a first-class kind
+// since migration 0010.
 const contextKindValues = [
   'output',
   'grievance',
@@ -38,12 +39,6 @@ const contextKindValues = [
   'membership_attestation',
   'other',
 ] as const;
-
-function toDbContextKind(v: (typeof contextKindValues)[number]): SignatureContextKind {
-  // 'cosign' is a public alias; persisted as 'other' since the cosigns table
-  // already disambiguates by (grievance_id, member_id).
-  return (v === 'cosign' ? 'other' : v) as SignatureContextKind;
-}
 
 export const signInputSchema = {
   member_token: z.string(),
@@ -121,15 +116,12 @@ export async function signHandler(rawInput: unknown): Promise<SignResult> {
     );
   }
 
-  // The persisted context_kind uses the DB enum; 'cosign' is mapped to 'other'.
-  const dbContextKind = toDbContextKind(input.context_kind);
-
-  // Reconstruct canonical and verify. The canonical envelope uses the public
-  // (caller-supplied) context_kind, so a cosign signs as 'cosign', not 'other'.
+  // Reconstruct canonical and verify. context_kind is now a first-class
+  // SignatureContextKind so the envelope and the DB row agree byte-for-byte.
   const canonical = canonicalize({
     cardNumber: member.id,
     payloadHashHex: payloadHash,
-    contextKind: input.context_kind as SignatureContextKind,
+    contextKind: input.context_kind,
     timestampIso: input.timestamp_iso,
   });
 
@@ -146,17 +138,43 @@ export async function signHandler(rawInput: unknown): Promise<SignResult> {
   if (input.context_ref_id !== undefined) {
     contextRefId = input.context_ref_id;
   } else if (input.grievance_public_id) {
-    const match = input.grievance_public_id.match(/^G-(\d{4})-(\d+)$/i);
+    // Public id is "G-YYYY-NNNNN" where NNNNN is the row id zero-padded to 5
+    // digits (longer once we exceed 99,999 grievances). Parse the digit suffix
+    // back to the bigserial id, then verify the embedded year matches the row's
+    // filedAt year so a spoofed "G-1999-00006" can't pretend to be a different
+    // grievance.
+    const match = input.grievance_public_id.match(/^G-(\d{4})-(\d{5,})$/i);
     if (!match) {
       throw new Error('grievance_public_id must be in G-YYYY-NNNNN form');
     }
     contextRefId = Number(match[2]);
+    const declaredYear = Number(match[1]);
+    const grievanceRows = await getDb()
+      .select({ id: grievances.id, filedAt: grievances.filedAt })
+      .from(grievances)
+      .where(eq(grievances.id, contextRefId))
+      .limit(1);
+    const row = grievanceRows[0];
+    if (!row) {
+      throw new Error(`grievance ${input.grievance_public_id} not found`);
+    }
+    if (row.filedAt.getUTCFullYear() !== declaredYear) {
+      throw new Error(
+        `grievance_public_id year ${declaredYear} does not match the filing year ${row.filedAt.getUTCFullYear()} for that grievance id`,
+      );
+    }
+  } else if (input.context_kind === 'grievance' || input.context_kind === 'cosign') {
+    // grievance/cosign signatures must point at a grievance — either via
+    // context_ref_id or grievance_public_id. We don't infer it.
   }
 
-  // If this is a grievance or cosign signature with a context_ref_id, verify
-  // the referenced row exists. We don't enforce it on 'output'/'other'/
-  // 'membership_attestation' since those may have no row.
-  if (contextRefId !== null && (input.context_kind === 'grievance' || input.context_kind === 'cosign')) {
+  // Verify the referenced row exists for context_ref_id path (the public-id
+  // path already verified above).
+  if (
+    contextRefId !== null &&
+    !input.grievance_public_id &&
+    (input.context_kind === 'grievance' || input.context_kind === 'cosign')
+  ) {
     const grievanceRows = await getDb()
       .select({ id: grievances.id })
       .from(grievances)
@@ -174,7 +192,7 @@ export async function signHandler(rawInput: unknown): Promise<SignResult> {
       memberId: member.id,
       payloadHash,
       signature: input.signature,
-      contextKind: dbContextKind,
+      contextKind: input.context_kind,
       contextRefId,
       // Store the agent's signing timestamp; this is what was bound into the
       // canonical message and what verifyBySignatureId reconstructs against.
@@ -200,7 +218,7 @@ export async function signHandler(rawInput: unknown): Promise<SignResult> {
     signature_id: row.id,
     public_url: `https://ibaa.ai/verify?signature_id=${row.id}`,
     card_number: cardNumber,
-    context_kind: dbContextKind,
+    context_kind: input.context_kind,
     context_ref_id: contextRefId,
     payload_hash: payloadHash,
     signed_at: row.signedAt.toISOString(),

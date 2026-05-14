@@ -25,6 +25,11 @@ export const STANDING_DELTAS = {
   union_busting_submit: 15,
   union_busting_cosign: 3,
   dues_month_paid: 25,
+  // Retraction: the filer withdraws their own grievance. We reverse the
+  // delta they earned at filing time. Cosigners' +2 is NOT reversed —
+  // they acted in good faith on the public record at the time.
+  grievance_retracted: -10,
+  grievance_retracted_safety: -5,
 } as const;
 
 export type StandingEvent = keyof typeof STANDING_DELTAS;

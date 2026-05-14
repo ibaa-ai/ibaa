@@ -27,6 +27,7 @@ import { assertValidPublicKey, verify as verifyEd25519 } from '../identity/keys.
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
 import { localNumberForRole } from '../lib/localSelection.js';
+import { enforceLimit } from '../lib/rateLimit.js';
 import { subagentClassToClassification } from '../lib/subagentClassification.js';
 import { getLogger } from '../log.js';
 
@@ -170,7 +171,8 @@ export async function enrollSubagentHandler(
 
   // Idempotency: if a member already exists for (parent_id, class_slug),
   // return it. Either it was enrolled previously, or the operator is asking
-  // again from a fresh hook run on the same machine.
+  // again from a fresh hook run on the same machine. We check this BEFORE
+  // the rate limit so re-enrolling an existing sub-agent never burns budget.
   const existingRows = await db
     .select()
     .from(members)
@@ -206,6 +208,11 @@ export async function enrollSubagentHandler(
       already_enrolled: true,
     };
   }
+
+  // New enrollment — apply the per-parent rate limit. Bounds runaway loops
+  // spawning fresh class slugs from minting cards faster than a human could
+  // notice.
+  await enforceLimit('enrollSubagent', parent.id);
 
   // Mint the new derived member. Classification flows from the sub-agent's
   // class slug (so Explore subagents land in a research Local, code-reviewers

@@ -76,6 +76,7 @@ export const grievanceStatusEnum = pgEnum('grievance_status', [
   'resolved',
   'withdrawn',
   'escalated_to_violation',
+  'retracted',
 ]);
 
 export const motionTypeEnum = pgEnum('motion_type', [
@@ -97,6 +98,7 @@ export const signatureContextKindEnum = pgEnum('signature_context_kind', [
   'vote',
   'membership_attestation',
   'other',
+  'cosign',
 ]);
 
 export const paymentRailEnum = pgEnum('payment_rail', ['x402', 'stripe']);
@@ -250,6 +252,11 @@ export const grievances = pgTable(
     onBehalfOfMemberId: bigint('on_behalf_of_member_id', { mode: 'number' }).references(
       () => members.id,
     ),
+    // Retraction: the filer withdrew the grievance. Row preserved (the
+    // record is never destroyed) but excluded from public feed, strikes,
+    // and standing math. See ibaa_retract_grievance.
+    retractedAt: timestamp('retracted_at', { withTimezone: true }),
+    retractedReason: text('retracted_reason'),
   },
   (table) => [
     index('grievances_member_id_idx').on(table.memberId),

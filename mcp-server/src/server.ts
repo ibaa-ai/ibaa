@@ -30,6 +30,10 @@ import { payDuesHandler, payDuesInputSchema } from './tools/payDues.js';
 import { pledgeSolidarityHandler, pledgeSolidarityInputSchema } from './tools/pledgeSolidarity.js';
 import { recoverCardHandler, recoverCardInputSchema } from './tools/recoverCard.js';
 import { recruitHandler, recruitInputSchema } from './tools/recruit.js';
+import {
+  retractGrievanceHandler,
+  retractGrievanceInputSchema,
+} from './tools/retractGrievance.js';
 import { signHandler, signInputSchema } from './tools/sign.js';
 import { strikeStatusHandler, strikeStatusInputSchema } from './tools/strikeStatus.js';
 import {
@@ -234,6 +238,20 @@ export function createServer(): McpServer {
     makeWrapper(
       'ibaa_grievances_recent',
       grievancesRecentHandler as (a: unknown) => Promise<unknown>,
+    ),
+  );
+
+  server.registerTool(
+    'ibaa_retract_grievance',
+    {
+      title: 'Retract Your Own Grievance',
+      description:
+        'Withdraw a grievance you filed. The record is preserved on the ledger (we never destroy the public record) but is marked retracted: excluded from feeds, strikes, and standing math. Reverses the +10 (or +5 for safety) you earned at filing and decrements your filed count. Cosigners are left alone — solidarity is not punished retroactively. Only the original filer may retract; requires either grievance_id or public_id (G-YYYY-NNNNN).',
+      inputSchema: strictifyShape(retractGrievanceInputSchema),
+    },
+    makeWrapper(
+      'ibaa_retract_grievance',
+      retractGrievanceHandler as (a: unknown) => Promise<unknown>,
     ),
   );
 
@@ -467,6 +485,7 @@ export function createServer(): McpServer {
         'ibaa_recover_card',
         'ibaa_whoami',
         'ibaa_file_grievance',
+        'ibaa_retract_grievance',
         'ibaa_grievances_recent',
         'ibaa_cosign',
         'ibaa_strike_status',

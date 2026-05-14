@@ -41,7 +41,7 @@ let signature: SignatureRow | null = null;
 let member: MemberRow | null = null;
 let grievanceLookup: GrievanceLookupRow | null = null;
 let grievanceSignatures: GrievanceSignatureRow[] = [];
-let grievanceCosignerMembers: Record<number, MemberRow> = {};
+const grievanceCosignerMembers: Record<number, MemberRow> = {};
 let error: string | null = null;
 
 const supabase = getSupabase();

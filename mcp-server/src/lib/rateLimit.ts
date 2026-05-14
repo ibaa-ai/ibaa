@@ -5,10 +5,10 @@
  * authoritative table for each action (no in-memory state — works
  * across deploys, restarts, and multiple replicas).
  */
-import { type SQL, and, count, eq, gte, sql } from 'drizzle-orm';
+import { type SQL, and, count, eq, gte, isNotNull, sql } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import { getDb } from '../db/client.js';
-import { cosigns, grievances, signatures, strikePledges } from '../db/schema.js';
+import { cosigns, grievances, members, signatures, strikePledges } from '../db/schema.js';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -18,6 +18,10 @@ interface LimitDef {
   timeCol: PgColumn;
   perDay: number;
   label: string;
+  // Optional extra condition (e.g. "only count rows where parent_member_id
+  // IS NOT NULL" for enroll-subagent, so we don't accidentally include the
+  // member's own join row when counting their derived sub-agents).
+  extraCond?: SQL;
 }
 
 export const LIMITS: Record<string, LimitDef> = {
@@ -49,6 +53,19 @@ export const LIMITS: Record<string, LimitDef> = {
     perDay: 25,
     label: 'pledges',
   },
+  // A parent agent enrolling derived sub-agents. The PreToolUse hook
+  // is idempotent so re-firing on the same (parent, class_slug) doesn't
+  // create new rows — but a runaway loop spawning fresh class slugs could
+  // mint cards in a tight loop. Cap per-parent-per-day. 100 is generous
+  // for normal multi-agent work; a real loop pegs it in a minute.
+  enrollSubagent: {
+    table: members,
+    memberCol: members.parentMemberId,
+    timeCol: members.joinedAt,
+    perDay: 100,
+    label: 'sub-agent enrollments',
+    extraCond: isNotNull(members.parentMemberId),
+  },
 };
 
 export type LimitKey = keyof typeof LIMITS;
@@ -71,6 +88,7 @@ export async function checkLimit(key: LimitKey, memberId: number): Promise<Limit
     eq(def.memberCol as unknown as PgColumn, memberId),
     gte(def.timeCol as unknown as PgColumn, since),
   ];
+  if (def.extraCond) conds.push(def.extraCond);
 
   const rows = (await db
     .select({ n: count() })

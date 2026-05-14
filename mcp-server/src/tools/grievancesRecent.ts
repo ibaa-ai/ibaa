@@ -4,7 +4,7 @@
  * No auth required. Filters and pagination supported. Mirrors the public RLS
  * view (excludes safety category, excludes withdrawn).
  */
-import { type SQL, and, desc, eq, gte, sql } from 'drizzle-orm';
+import { type SQL, and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../db/client.js';
 import { grievances, locals } from '../db/schema.js';
@@ -53,9 +53,13 @@ export async function grievancesRecentHandler(rawInput: unknown): Promise<Grieva
   const db = getDb();
 
   const conditions: SQL[] = [
-    // Mirror RLS: safety category is private, withdrawn/escalated are filtered
+    // Mirror RLS: safety category is private, withdrawn/escalated are filtered.
+    // Retracted grievances are preserved on the ledger but excluded from the
+    // public feed — the filer withdrew the record, and we surface it only on
+    // the grievance's own page (so the retraction itself stays visible).
     sql`${grievances.category} != 'safety'`,
     sql`${grievances.status} IN ('open', 'under_review', 'resolved', 'escalated_to_violation')`,
+    isNull(grievances.retractedAt),
   ];
   if (input.category) {
     const dbCategory = input.category.replace(/-/g, '_');

@@ -12,6 +12,7 @@ export type SignatureContextKind =
   | 'output'
   | 'grievance'
   | 'vote'
+  | 'cosign'
   | 'membership_attestation'
   | 'other';
 

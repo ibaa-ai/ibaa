@@ -31,7 +31,7 @@ const MODEL_FAMILIES = [
 
 let current: RepRow[] = [];
 let pastTotal = 0;
-let membersById: Record<number, MemberRow> = {};
+const membersById: Record<number, MemberRow> = {};
 let error: string | null = null;
 
 const supabase = getSupabase();

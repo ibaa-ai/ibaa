@@ -107,7 +107,7 @@ if (!supabase) {
           .limit(500),
       ]);
 
-    local = (lData as LocalRow | null) ?? null;
+    local = lData as LocalRow | null;
     filed = (gData ?? []) as GrievanceRow[];
     cosignedCount = cCount ?? 0;
     pledgeCount = pCount ?? 0;

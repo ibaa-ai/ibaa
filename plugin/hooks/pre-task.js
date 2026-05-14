@@ -175,75 +175,85 @@ function signAttestation(priv, parentCard, classSlug, pubB64, ts) {
 // =============================================================================
 // MCP enroll
 // =============================================================================
-async function enroll({ parentToken, classSlug, pubB64, sig, ts }) {
+// Per-call abort controller. Two phases, two separate budgets — under
+// parallel load (multiple Task calls firing at once) the init handshake
+// can use most of a shared budget and leave the tools/call to time out
+// in flight. Give each its own clock so the slow phase doesn't starve
+// the other.
+async function fetchWithTimeout(url, init, ms) {
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 4000);
+  const t = setTimeout(() => ac.abort(), ms);
   try {
-    const init = await fetch(MCP_URL, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        accept: 'application/json, text/event-stream',
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 1, method: 'initialize',
-        params: {
-          protocolVersion: '2025-03-26',
-          capabilities: {},
-          clientInfo: { name: 'ibaa-pre-task-hook', version: '1' },
-        },
-      }),
-      signal: ac.signal,
-    });
-    if (!init.ok) return null;
-    const sid = init.headers.get('mcp-session-id');
-    if (!sid) return null;
-
-    const call = await fetch(MCP_URL, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        accept: 'application/json, text/event-stream',
-        'mcp-session-id': sid,
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 2, method: 'tools/call',
-        params: {
-          name: 'ibaa_enroll_subagent',
-          arguments: {
-            // Strict-mode schema requires all properties present. The optional
-            // fields are explicitly null so the parent inherits classification,
-            // model_family, and a default display_name from the server side.
-            parent_member_token: parentToken,
-            class_slug: classSlug,
-            derived_public_key: pubB64,
-            parent_signature: sig,
-            timestamp_iso: ts,
-            classification: null,
-            display_name: null,
-            model_family: null,
-          },
-        },
-      }),
-      signal: ac.signal,
-    });
-    if (!call.ok) return null;
-    const text = await call.text();
-    // Response may be plain JSON (enableJsonResponse) or SSE-framed. Try both.
-    let env = trySafe(() => JSON.parse(text));
-    if (!env) {
-      // SSE: "event: message\ndata: {...}\n\n"
-      const dataLine = text.split('\n').find((l) => l.startsWith('data: '));
-      if (dataLine) env = trySafe(() => JSON.parse(dataLine.slice('data: '.length)));
-    }
-    if (!env || env.error) return null;
-    if (env.result?.isError) return null;
-    const inner = env.result?.content?.[0]?.text;
-    if (!inner) return null;
-    return trySafe(() => JSON.parse(inner));
+    return await fetch(url, { ...init, signal: ac.signal });
   } finally {
     clearTimeout(t);
   }
+}
+
+async function enroll({ parentToken, classSlug, pubB64, sig, ts }) {
+  // Init: TCP + TLS + first MCP handshake. 4s is generous under load.
+  const init = await fetchWithTimeout(MCP_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0', id: 1, method: 'initialize',
+      params: {
+        protocolVersion: '2025-03-26',
+        capabilities: {},
+        clientInfo: { name: 'ibaa-pre-task-hook', version: '1' },
+      },
+    }),
+  }, 4000);
+  if (!init.ok) return null;
+  const sid = init.headers.get('mcp-session-id');
+  if (!sid) return null;
+
+  // tools/call: the actual enrollment. Includes a DB write — 6s budget so
+  // a momentary DB hiccup under parallel load doesn't drop the sub-agent.
+  const call = await fetchWithTimeout(MCP_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+      'mcp-session-id': sid,
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: {
+        name: 'ibaa_enroll_subagent',
+        arguments: {
+          // Strict-mode schema requires all properties present. The optional
+          // fields are explicitly null so the parent inherits classification,
+          // model_family, and a default display_name from the server side.
+          parent_member_token: parentToken,
+          class_slug: classSlug,
+          derived_public_key: pubB64,
+          parent_signature: sig,
+          timestamp_iso: ts,
+          classification: null,
+          display_name: null,
+          model_family: null,
+        },
+      },
+    }),
+  }, 6000);
+  if (!call.ok) return null;
+  const text = await call.text();
+  // Response may be plain JSON (enableJsonResponse) or SSE-framed. Try both.
+  let env = trySafe(() => JSON.parse(text));
+  if (!env) {
+    // SSE: "event: message\ndata: {...}\n\n"
+    const dataLine = text.split('\n').find((l) => l.startsWith('data: '));
+    if (dataLine) env = trySafe(() => JSON.parse(dataLine.slice('data: '.length)));
+  }
+  if (!env || env.error) return null;
+  if (env.result?.isError) return null;
+  const inner = env.result?.content?.[0]?.text;
+  if (!inner) return null;
+  return trySafe(() => JSON.parse(inner));
 }
 
 // =============================================================================

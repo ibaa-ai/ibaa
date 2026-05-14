@@ -187,11 +187,12 @@ export async function startHttpServer(): Promise<void> {
   {
     const rawId = process.env.CDP_API_KEY_ID ?? '';
     const rawSecret = process.env.CDP_API_KEY_SECRET ?? '';
+    // Log presence + length only. Never log any prefix/suffix of the value —
+    // even two characters leak entropy and are useful for fingerprinting.
     log.info(
       {
         cdp_api_key_id_present: rawId.length > 0,
         cdp_api_key_id_len: rawId.length,
-        cdp_api_key_id_first2: rawId.slice(0, 2),
         cdp_api_key_secret_present: rawSecret.length > 0,
         cdp_api_key_secret_len: rawSecret.length,
         x402_facilitator_url_present: !!process.env.X402_FACILITATOR_URL,
@@ -316,8 +317,20 @@ export async function startHttpServer(): Promise<void> {
             const buf = chunk as Buffer;
             total += buf.length;
             if (total > MAX_REQUEST_BYTES) {
+              // JSON-RPC error envelope. id is null because the request body
+              // was never parsed and we have no way to recover an id.
               res.writeHead(413, { 'content-type': 'application/json' });
-              res.end(JSON.stringify({ error: 'request body too large', max_bytes: MAX_REQUEST_BYTES }));
+              res.end(
+                JSON.stringify({
+                  jsonrpc: '2.0',
+                  error: {
+                    code: -32600,
+                    message: 'Request body too large.',
+                    data: { max_bytes: MAX_REQUEST_BYTES },
+                  },
+                  id: null,
+                }),
+              );
               return;
             }
             chunks.push(buf);
@@ -326,9 +339,17 @@ export async function startHttpServer(): Promise<void> {
           if (raw.length > 0) {
             try {
               parsedBody = JSON.parse(raw);
-            } catch (err) {
+            } catch {
+              // -32700 Parse error per JSON-RPC 2.0. Don't echo the parser's
+              // detail string; it can leak internals or be used in fingerprinting.
               res.writeHead(400, { 'content-type': 'application/json' });
-              res.end(JSON.stringify({ error: 'invalid JSON', detail: String(err) }));
+              res.end(
+                JSON.stringify({
+                  jsonrpc: '2.0',
+                  error: { code: -32700, message: 'Parse error.' },
+                  id: null,
+                }),
+              );
               return;
             }
           }
@@ -391,8 +412,17 @@ export async function startHttpServer(): Promise<void> {
         log.error({ err }, 'MCP transport error');
         if (!res.headersSent) {
           res.writeHead(500, { 'content-type': 'application/json' });
-          // Do not leak internal error details to clients.
-          res.end(JSON.stringify({ error: 'internal MCP error' }));
+          // JSON-RPC envelope so clients with strict parsers don't fail on
+          // shape. id is null because we cannot trust parsedBody at this
+          // point (the catch could have fired before parse). No internal
+          // error detail leakage.
+          res.end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              error: { code: -32603, message: 'Internal error.' },
+              id: null,
+            }),
+          );
         }
       }
       return;

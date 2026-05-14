@@ -15,7 +15,7 @@ interface GrievanceRow {
 interface LocalLookup { id: number; number: string; name: string }
 
 let grievances: GrievanceRow[] = [];
-let localsById = new Map<number, LocalLookup>();
+const localsById = new Map<number, LocalLookup>();
 let error: string | null = null;
 
 const supabase = getSupabase();

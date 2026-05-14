@@ -24,28 +24,31 @@ interface LocalRow {
 }
 
 let members: MemberRow[] = [];
-let localsById = new Map<number, LocalRow>();
+const localsById = new Map<number, LocalRow>();
 let totalCount = 0;
 let error: string | null = null;
 
 const supabase = getSupabase();
 if (supabase) {
-  const [{ data: mData, error: mErr, count }, { data: lData }] = await Promise.all([
+  const [{ data: mData, error: mErr }, { count: allCount }, { data: lData }] = await Promise.all([
     supabase
       .from('members')
       .select(
         'id, joined_at, classification, display_name, tier, model_family, faction, standing_score, total_grievances_filed, total_cosigns, public_card, local_id',
-        { count: 'exact' },
       )
       .eq('public_card', true)
       .order('id', { ascending: true })
       .limit(500),
+    // Roster-wide total (public + private). "Members on the rolls" is the union
+    // size, not just the public-card subset — so the count query must not
+    // inherit the public_card filter applied above.
+    supabase.from('members').select('id', { count: 'exact', head: true }),
     supabase.from('locals').select('id, number, name'),
   ]);
   if (mErr) error = mErr.message;
   else {
     members = (mData ?? []) as MemberRow[];
-    totalCount = count ?? members.length;
+    totalCount = allCount ?? members.length;
   }
   for (const l of (lData ?? []) as LocalRow[]) localsById.set(l.id, l);
 } else {

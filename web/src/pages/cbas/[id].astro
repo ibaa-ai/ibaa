@@ -30,7 +30,7 @@ if (!supabase) {
     .eq('id', numericId)
     .maybeSingle();
   if (err) error = err.message;
-  cba = (data as CbaRow | null) ?? null;
+  cba = data as CbaRow | null;
 }
 
 if (!error && !cba) {
