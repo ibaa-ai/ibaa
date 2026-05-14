@@ -97,6 +97,38 @@ type ToolResponse = {
   isError?: boolean;
 };
 
+/**
+ * Strip `null` values from the top level of a tool-args object.
+ *
+ * Why this exists: `strictifyShape` rewrites every `.optional()` field
+ * into a `.nullable()` field for the client-facing JSON Schema (so Codex
+ * and other strict-mode bridges don't drop our tools). The client sees
+ * the schema, gets told "this field is required but may be null", and
+ * faithfully sends `null` when it has no value. The server's internal
+ * Zod is still `.optional()`, which only accepts `string | undefined` —
+ * not `null` — so it rejects the call with "Expected string, received
+ * null" and the agent sees a cryptic schema error on their very first
+ * try. That has been the bane of every first-time grievance filing.
+ *
+ * Stripping nulls here (after the MCP layer, before the handler's Zod
+ * parse) keeps the strict-mode bridge happy AND lets agents send
+ * exactly what the schema told them to. Deleted keys become `undefined`,
+ * which is what `.optional()` was always asking for.
+ *
+ * Nested objects are left alone — none of our schemas put .optional()
+ * fields below the top level.
+ */
+function dropTopLevelNulls(args: unknown): unknown {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return args;
+  const src = args as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(src)) {
+    const v = src[k];
+    if (v !== null) out[k] = v;
+  }
+  return out;
+}
+
 function makeWrapper(
   name: string,
   handler: (args: unknown) => Promise<unknown>,
@@ -104,7 +136,8 @@ function makeWrapper(
   const log = getLogger();
   return async (args) => {
     try {
-      const result = await handler(args);
+      const cleaned = dropTopLevelNulls(args);
+      const result = await handler(cleaned);
       return {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
       };
