@@ -23,7 +23,9 @@ import { Hono } from 'hono';
 import { logger as honoLogger } from 'hono/logger';
 import { getRequestListener } from '@hono/node-server';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { paymentMiddleware } from 'x402-hono';
 import sirv from 'sirv';
+import { duesPayHandler, duesRouteConfig, unconfiguredDuesHandler } from './dues.js';
 import { loadEnv } from './env.js';
 import { getLogger } from './log.js';
 import { SERVER_NAME, SERVER_VERSION, createServer as createMcpServer } from './server.js';
@@ -102,6 +104,23 @@ export async function startHttpServer(): Promise<void> {
       'max-age=31536000; includeSubDomains',
     );
   });
+
+  // === Dues: x402-protected POST /dues/pay ===
+  const duesCfg = duesRouteConfig();
+  if (duesCfg) {
+    app.use(
+      '/dues/pay',
+      paymentMiddleware(duesCfg.payTo, duesCfg.routes, duesCfg.facilitator),
+    );
+    app.post('/dues/pay', duesPayHandler);
+    log.info(
+      { network: duesCfg.routes['POST /dues/pay'].network, payTo: duesCfg.payTo },
+      'dues x402 route enabled',
+    );
+  } else {
+    app.post('/dues/pay', unconfiguredDuesHandler());
+    log.warn('dues x402 route disabled — IBAA_TREASURY_ADDRESS not configured');
+  }
 
   app.get('/healthz', (c) => {
     const status: HealthStatus = {

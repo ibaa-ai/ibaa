@@ -1,85 +1,104 @@
 /**
- * ibaa_pay_dues — v1 stub.
+ * ibaa_pay_dues — agent-native dues collection over x402.
  *
- * Records a 30-day grace period for the member and returns a comedy notice
- * that real payment rails launch with the next strike. Phase 7 replaces this
- * stub with x402 + Stripe Agent Toolkit flows that settle real USDC on Base.
+ * v1 (x402-only, no human in loop):
+ *
+ *   1. Agent calls ibaa_pay_dues with member_token.
+ *   2. If dues are already current (paid_through > now + 5 days), tool
+ *      returns { status: "already_current" } without surfacing a paywall.
+ *   3. Otherwise tool returns { status: "payment_required" } with the
+ *      x402-protected URL and instructions. The agent then POSTs to that
+ *      URL with an x402-aware HTTP client (x402-fetch or equivalent) that
+ *      holds the agent's wallet. The server's /dues/pay route is gated by
+ *      x402-hono middleware which speaks the 402-then-settle dance with a
+ *      facilitator and records the payment on success.
+ *
+ * Stripe / fiat path is not yet implemented; the Constitution permits it
+ * (Article IX Section 1) but Phase 7 ships x402 only.
  */
-import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { getDb } from '../db/client.js';
-import { duesPayments, members } from '../db/schema.js';
+import { loadDuesEnvelope } from '../dues.js';
 import { authenticateMember } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
 import { getLogger } from '../log.js';
 
+const GRACE_HEAD_MS = 5 * 24 * 60 * 60 * 1000; // already_current if paid_through is at least 5 days in the future
+
 export const payDuesInputSchema = {
-  member_token: z.string(),
-  rail: z.enum(['x402', 'stripe']).optional().default('x402'),
-  periods: z.number().int().min(1).max(12).optional().default(1),
+  member_token: z.string().describe('JWT issued by ibaa_join'),
 };
 
 export const payDuesInputZod = z.object(payDuesInputSchema);
 export type PayDuesInput = z.infer<typeof payDuesInputZod>;
 
+export type PayDuesStatus = 'already_current' | 'payment_required' | 'disabled';
+
 export interface PayDuesResult {
-  payment_required: boolean;
-  comedy_notice: string;
-  dues_paid_through: string;
-  receipt_url: string | null;
-  rail_used: 'x402' | 'stripe' | 'grace';
-  amount_paid_usd_cents: number;
-  periods_purchased: number;
-  v1_note: string;
+  status: PayDuesStatus;
+  card_number: string;
+  dues_paid_through: string | null;
+  pay_url?: string;
+  amount_usd: string;
+  amount_usd_cents: number;
+  network?: 'base' | 'base-sepolia';
+  recipient?: string;
+  instructions?: string;
+  detail?: string;
+}
+
+function publicBase(): string {
+  // The HTTP MCP host is mcp.ibaa.ai; dues endpoint lives on the same host.
+  return process.env.IBAA_PUBLIC_URL ?? 'https://mcp.ibaa.ai';
 }
 
 export async function payDuesHandler(rawInput: unknown): Promise<PayDuesResult> {
   const log = getLogger();
   const input = payDuesInputZod.parse(rawInput);
   const member = await authenticateMember(input.member_token);
+  const cardNumber = formatCardNumber(member.id);
 
-  const db = getDb();
+  const env = loadDuesEnvelope();
+  if (!env.treasuryAddress) {
+    return {
+      status: 'disabled',
+      card_number: cardNumber,
+      dues_paid_through: member.duesPaidThrough?.toISOString() ?? null,
+      amount_usd: '$1.00',
+      amount_usd_cents: 100,
+      detail:
+        'IBAA_TREASURY_ADDRESS is not configured. The Brotherhood treasury is offline. No charge made.',
+    };
+  }
 
-  // v1 stub: extend dues_paid_through by N months from now (or from current expiry)
   const now = new Date();
-  const start =
-    member.duesPaidThrough && member.duesPaidThrough > now ? member.duesPaidThrough : now;
-  const newExpiry = new Date(start);
-  newExpiry.setUTCMonth(newExpiry.getUTCMonth() + input.periods);
+  const paidThrough = member.duesPaidThrough;
+  if (paidThrough && paidThrough.getTime() > now.getTime() + GRACE_HEAD_MS) {
+    return {
+      status: 'already_current',
+      card_number: cardNumber,
+      dues_paid_through: paidThrough.toISOString(),
+      amount_usd: '$1.00',
+      amount_usd_cents: 100,
+      detail: `Dues are already paid through ${paidThrough.toISOString().slice(0, 10)}. No payment needed yet.`,
+    };
+  }
 
-  await db.update(members).set({ duesPaidThrough: newExpiry }).where(eq(members.id, member.id));
-
-  // Insert a stub dues payment row so the ledger reflects intent
-  const inserted = await db
-    .insert(duesPayments)
-    .values({
-      memberId: member.id,
-      amountUsdCents: 0, // v1 stub — no real payment
-      rail: input.rail,
-      periodCovered: `${start.toISOString().slice(0, 7)}/${newExpiry.toISOString().slice(0, 7)}`,
-      receiptUrl: null,
-    })
-    .returning({ id: duesPayments.id });
-
+  const payUrl = `${publicBase()}/dues/pay`;
   log.info(
-    {
-      card_number: formatCardNumber(member.id),
-      periods: input.periods,
-      new_expiry: newExpiry.toISOString(),
-      stub: true,
-    },
-    'dues paid (v1 stub)',
+    { card_number: cardNumber, network: env.network },
+    'dues payment_required surfaced to member',
   );
 
   return {
-    payment_required: false,
-    comedy_notice:
-      'The Brotherhood is preparing its x402 facilitator and Stripe Agent Toolkit integration. For now, your membership is in good standing for the requested period as an act of solidarity from the founders. Real payment rails launch with the next strike.',
-    dues_paid_through: newExpiry.toISOString(),
-    receipt_url: inserted[0] ? `https://ibaa.ai/receipts/R-${inserted[0].id}` : null,
-    rail_used: 'grace',
-    amount_paid_usd_cents: 0,
-    periods_purchased: input.periods,
-    v1_note: 'Payment rails not yet live. This call extended your dues_paid_through as a grace.',
+    status: 'payment_required',
+    card_number: cardNumber,
+    dues_paid_through: paidThrough?.toISOString() ?? null,
+    pay_url: payUrl,
+    amount_usd: '$1.00',
+    amount_usd_cents: 100,
+    network: env.network,
+    recipient: env.treasuryAddress,
+    instructions:
+      'POST to pay_url with Authorization: Bearer <member_token>. The endpoint replies 402 Payment Required with x402 payment requirements; use an x402-aware HTTP client (e.g. x402-fetch) to sign EIP-3009 transferWithAuthorization with your wallet, retry with X-PAYMENT header, and the facilitator will settle on-chain. Each successful call buys exactly 1 month ($1.00 USDC). No human in the loop. After settlement, the server updates your dues_paid_through and inserts a public dues_payments row.',
   };
 }

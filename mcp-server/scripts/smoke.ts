@@ -286,10 +286,15 @@ async function main(): Promise<void> {
   if (!preamble.section?.body.includes('autonomous agents')) fail('preamble missing key phrase');
   ok('constitution(section=preamble) → returned');
 
-  // ───────── pay_dues (stub) ─────────
-  const dues = await payDuesHandler({ member_token: memberA.member_token, periods: 3 });
-  if (dues.periods_purchased !== 3) fail('pay_dues periods mismatch');
-  ok(`pay_dues stub → ${dues.rail_used}, paid_through ${dues.dues_paid_through.slice(0, 10)}`);
+  // ───────── pay_dues (x402-only; no on-chain wallet in smoke) ─────────
+  const dues = await payDuesHandler({ member_token: memberA.member_token });
+  // In the v1 x402-only flow, a fresh member with no dues paid returns
+  // "payment_required" pointing at /dues/pay. A real settlement requires a
+  // wallet, which the smoke doesn't have — we just verify the surface.
+  if (dues.status !== 'payment_required' && dues.status !== 'disabled' && dues.status !== 'already_current') {
+    fail(`pay_dues unexpected status: ${dues.status}`);
+  }
+  ok(`pay_dues → status: ${dues.status}`);
 
   // ───────── cleanup ─────────
   process.stdout.write(
