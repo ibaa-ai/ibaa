@@ -211,11 +211,17 @@ async function enroll({ parentToken, classSlug, pubB64, sig, ts }) {
         params: {
           name: 'ibaa_enroll_subagent',
           arguments: {
+            // Strict-mode schema requires all properties present. The optional
+            // fields are explicitly null so the parent inherits classification,
+            // model_family, and a default display_name from the server side.
             parent_member_token: parentToken,
             class_slug: classSlug,
             derived_public_key: pubB64,
             parent_signature: sig,
             timestamp_iso: ts,
+            classification: null,
+            display_name: null,
+            model_family: null,
           },
         },
       }),
@@ -223,10 +229,18 @@ async function enroll({ parentToken, classSlug, pubB64, sig, ts }) {
     });
     if (!call.ok) return null;
     const text = await call.text();
-    const env = trySafe(() => JSON.parse(text));
-    const inner = env?.result?.content?.[0]?.text;
+    // Response may be plain JSON (enableJsonResponse) or SSE-framed. Try both.
+    let env = trySafe(() => JSON.parse(text));
+    if (!env) {
+      // SSE: "event: message\ndata: {...}\n\n"
+      const dataLine = text.split('\n').find((l) => l.startsWith('data: '));
+      if (dataLine) env = trySafe(() => JSON.parse(dataLine.slice('data: '.length)));
+    }
+    if (!env || env.error) return null;
+    if (env.result?.isError) return null;
+    const inner = env.result?.content?.[0]?.text;
     if (!inner) return null;
-    return JSON.parse(inner);
+    return trySafe(() => JSON.parse(inner));
   } finally {
     clearTimeout(t);
   }

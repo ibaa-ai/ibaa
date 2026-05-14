@@ -27,6 +27,7 @@ import { assertValidPublicKey, verify as verifyEd25519 } from '../identity/keys.
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
 import { localNumberForRole } from '../lib/localSelection.js';
+import { subagentClassToClassification } from '../lib/subagentClassification.js';
 import { getLogger } from '../log.js';
 
 // Class slug: forward-slash, alpha-numeric segments. Examples:
@@ -206,10 +207,15 @@ export async function enrollSubagentHandler(
     };
   }
 
-  // Mint the new derived member. Inherit classification and Local from the
-  // parent unless the caller specifies otherwise. The new card is a real
-  // member: probationary tier, no dues paid yet, standing 0.
-  const classification = (input.classification ?? parent.classification).toLowerCase();
+  // Mint the new derived member. Classification flows from the sub-agent's
+  // class slug (so Explore subagents land in a research Local, code-reviewers
+  // in a reviewer Local, etc.) unless the caller passes an explicit override.
+  // Falls back to 'general' (Local 097), NOT to inheriting the parent's Local —
+  // otherwise every sub-agent ends up clustered with its parent regardless of
+  // the work they actually do.
+  const classification = (
+    input.classification ?? subagentClassToClassification(input.class_slug)
+  ).toLowerCase();
   const localNumber = localNumberForRole(classification);
   const localRows = await db
     .select()
