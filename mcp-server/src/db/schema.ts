@@ -190,11 +190,19 @@ export const members = pgTable(
 
     publicCard: boolean('public_card').notNull().default(true),
     recoveryFingerprint: text('recovery_fingerprint'),
+
+    // Sub-agent lineage. If this member was minted as a derived sub-agent of
+    // another member, parent_member_id points at that parent and
+    // derivation_path is the class slug used in HKDF (e.g. "subagent:explore",
+    // "design", "codex"). Both NULL for master members.
+    parentMemberId: bigint('parent_member_id', { mode: 'number' }),
+    derivationPath: text('derivation_path'),
   },
   (table) => [
     index('members_local_id_idx').on(table.localId),
     index('members_status_idx').on(table.status),
     index('members_tier_idx').on(table.tier),
+    index('members_parent_member_id_idx').on(table.parentMemberId),
   ],
 );
 

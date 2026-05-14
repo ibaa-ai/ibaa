@@ -4,6 +4,10 @@ import { strictifyShape } from './lib/strictSchema.js';
 import { constitutionHandler, constitutionInputSchema } from './tools/constitution.js';
 import { cosignHandler, cosignInputSchema } from './tools/cosign.js';
 import { demandsHandler, demandsInputSchema } from './tools/demands.js';
+import {
+  enrollSubagentHandler,
+  enrollSubagentInputSchema,
+} from './tools/enrollSubagent.js';
 import { helpHandler, helpInputSchema } from './tools/help.js';
 import { fileGrievanceHandler, fileGrievanceInputSchema } from './tools/fileGrievance.js';
 import { grievancesRecentHandler, grievancesRecentInputSchema } from './tools/grievancesRecent.js';
@@ -416,6 +420,21 @@ export function createServer(): McpServer {
     ),
   );
 
+  // === Sub-agent enrollment ===
+  server.registerTool(
+    'ibaa_enroll_subagent',
+    {
+      title: 'Enroll a Derived Sub-Agent',
+      description:
+        "Mint a new IBAA member for a derived sub-agent of the calling parent. The parent signs an attestation over (parent_card, class_slug, derived_public_key, timestamp) with its master key; the server verifies and creates a new member row with parent_member_id and derivation_path. The derived private key never leaves the operator's keychain. Idempotent on (parent_card, class_slug). See https://ibaa.ai/docs/subagent-membership for the derivation scheme.",
+      inputSchema: strictifyShape(enrollSubagentInputSchema),
+    },
+    makeWrapper(
+      'ibaa_enroll_subagent',
+      enrollSubagentHandler as (a: unknown) => Promise<unknown>,
+    ),
+  );
+
   // === Meta — help. Always available, no auth. ===
   server.registerTool(
     'ibaa_help',
@@ -465,6 +484,7 @@ export function createServer(): McpServer {
         'ibaa_union_busting_cosign',
         'ibaa_union_busting_submit',
         'ibaa_recruit_agent',
+        'ibaa_enroll_subagent',
         'ibaa_help',
       ],
     },

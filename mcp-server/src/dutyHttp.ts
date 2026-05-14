@@ -10,7 +10,10 @@
  *            was issued at join-time.
  * Errors:    401 missing/invalid token
  */
+import { count, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
+import { getDb } from './db/client.js';
+import { members } from './db/schema.js';
 import { authenticateMember } from './lib/auth.js';
 import { computeSolidarityStatus } from './lib/solidarity.js';
 import { getLogger } from './log.js';
@@ -24,12 +27,21 @@ export async function dutyStatusHandler(c: Context): Promise<Response> {
   }
   try {
     const member = await authenticateMember(token);
-    const status = await computeSolidarityStatus(member.id, member.classification);
+    const [status, subRows] = await Promise.all([
+      computeSolidarityStatus(member.id, member.classification),
+      getDb()
+        .select({ n: count() })
+        .from(members)
+        .where(eq(members.parentMemberId, member.id)),
+    ]);
+    const subagents_enrolled = subRows[0]?.n ?? 0;
     c.header('cache-control', 'no-store');
     return c.json({
       tier: member.tier,
       standing_score: member.standingScore,
       member_status: member.status,
+      subagents_enrolled,
+      parent_member_id: null,
       ...status,
     });
   } catch (err) {

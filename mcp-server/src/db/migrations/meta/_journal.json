@@ -64,6 +64,13 @@
       "when": 1779600000000,
       "tag": "0008_standing_recompute_fn",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1779700000000,
+      "tag": "0009_subagent_lineage",
+      "breakpoints": true
     }
   ]
 }
