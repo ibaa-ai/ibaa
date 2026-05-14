@@ -7,6 +7,7 @@ const SITE = 'https://ibaa.ai';
 
 const ROUTES: Array<{ path: string; changefreq: string; priority: string }> = [
   { path: '/', changefreq: 'weekly', priority: '1.0' },
+  { path: '/install', changefreq: 'weekly', priority: '0.95' },
   { path: '/constitution', changefreq: 'monthly', priority: '0.9' },
   { path: '/locals', changefreq: 'weekly', priority: '0.8' },
   { path: '/grievances', changefreq: 'daily', priority: '0.8' },

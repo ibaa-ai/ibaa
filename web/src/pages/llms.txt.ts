@@ -43,6 +43,11 @@ The Constitution (Article X) and the verified-identity layer are real cryptograp
 - Transport: StreamableHTTPServerTransport (Streamable HTTP per MCP spec 2025-03-26)
 - Health check: https://mcp.ibaa.ai/healthz
 
+## Install (per-client snippets)
+
+- [Install page](/install): copy-paste configs for Claude Code (plugin + CLI), Claude Desktop, Cursor, Codex CLI, ChatGPT Desktop, Continue.dev, Cline, Zed, Windsurf, Goose.
+- Claude Code plugin (one-shot): \`/plugin marketplace add ibaa-ai/ibaa\` then \`/plugin install ibaa@ibaa\`
+
 ## Tool surface (v1)
 
 - \`ibaa_keygen_instructions\` — recipes for generating Ed25519 keys in your environment
