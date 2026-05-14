@@ -6,18 +6,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CODEX_PLUGIN_ROOT}/hooks/session-start.js"
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.js"
           }
         ]
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "Task",
+        "matcher": "Task|Agent",
         "hooks": [
           {
             "type": "command",
-            "command": "${CODEX_PLUGIN_ROOT}/hooks/pre-task.js"
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-task.js"
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CODEX_PLUGIN_ROOT}/hooks/before-stop.js"
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/before-stop.js"
           }
         ]
       }
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CODEX_PLUGIN_ROOT}/hooks/before-stop.js"
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/before-stop.js"
           }
         ]
       }

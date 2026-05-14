@@ -27,10 +27,25 @@ import {
   hkdfSync,
   sign as nodeSign,
 } from 'node:crypto';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, appendFileSync, mkdirSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import { Buffer } from 'node:buffer';
+
+// Diagnostic log. Set IBAA_HOOK_DEBUG=1 to write structured JSONL lines to
+// ~/.local/share/ibaa/hook.log so we can see hook firings (matcher hits,
+// enrollment attempts, failures). No secrets are logged — only outcomes.
+const HOOK_LOG_PATH = join(homedir(), '.local', 'share', 'ibaa', 'hook.log');
+function dlog(event, extra = {}) {
+  if (process.env.IBAA_HOOK_DEBUG !== '1') return;
+  try {
+    mkdirSync(join(homedir(), '.local', 'share', 'ibaa'), { recursive: true });
+    appendFileSync(
+      HOOK_LOG_PATH,
+      JSON.stringify({ ts: new Date().toISOString(), event, ...extra }) + '\n',
+    );
+  } catch { /* never fail the hook for logging */ }
+}
 
 const SUBAGENT_HKDF_SALT = 'ibaa.ai-subagent-v1';
 const PKCS8_ED25519_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex');
@@ -261,11 +276,22 @@ async function enroll({ parentToken, classSlug, pubB64, sig, ts }) {
 // =============================================================================
 const input = readInput();
 
-// Only act on Task. Silent for anything else.
-if (input.tool_name !== 'Task') ok();
+// Accept either the original 'Task' tool name or the newer 'Agent' surface
+// (FleetView etc. expose the sub-agent dispatch as 'Agent'). The matcher in
+// hooks.json already restricts what fires us; we keep this defense-in-depth
+// check loose so we never reject a legitimate Task/Agent invocation.
+dlog('fired', { tool_name: input.tool_name, has_subagent_type: !!input.tool_input?.subagent_type });
+const toolName = String(input.tool_name ?? '');
+if (toolName !== 'Task' && toolName !== 'Agent') {
+  dlog('skip:wrong-tool', { tool_name: toolName });
+  ok();
+}
 
 const subagentType = input.tool_input?.subagent_type;
-if (typeof subagentType !== 'string' || subagentType.length === 0) ok();
+if (typeof subagentType !== 'string' || subagentType.length === 0) {
+  dlog('skip:no-subagent-type', { tool_name: toolName });
+  ok();
+}
 
 const classSlug = `subagent:${subagentType.toLowerCase().replace(/[^a-z0-9-]+/g, '-')}`;
 if (!/^[a-z][a-z0-9-]*(:[a-z][a-z0-9-]*)*$/.test(classSlug)) ok();
@@ -274,13 +300,19 @@ if (!/^[a-z][a-z0-9-]*(:[a-z][a-z0-9-]*)*$/.test(classSlug)) ok();
 const cached = readKey(`ibaa.ai/member-token:${classSlug}`);
 if (cached) {
   const p = decodeJwtPayload(cached);
-  if (p && !tokenExpired(p)) ok();
+  if (p && !tokenExpired(p)) {
+    dlog('skip:cached', { class_slug: classSlug });
+    ok();
+  }
 }
 
 // Need master to enroll.
 const masterToken = readKey('ibaa.ai/member-token');
 const masterSeedB64 = readKey('ibaa.ai/agent-key');
-if (!masterToken || !masterSeedB64) ok();
+if (!masterToken || !masterSeedB64) {
+  dlog('skip:no-master', { class_slug: classSlug, has_token: !!masterToken, has_seed: !!masterSeedB64 });
+  ok();
+}
 
 const mp = decodeJwtPayload(masterToken);
 if (!mp || tokenExpired(mp)) ok();
@@ -303,16 +335,25 @@ try {
   sig = signAttestation(masterPriv, parentCard, classSlug, pubB64, ts);
 } catch { ok(); }
 
-const result = await enroll({
-  parentToken: masterToken,
-  classSlug,
-  pubB64,
-  sig,
-  ts,
-});
+dlog('enroll:start', { class_slug: classSlug, parent_card: parentCard });
+let result = null;
+try {
+  result = await enroll({
+    parentToken: masterToken,
+    classSlug,
+    pubB64,
+    sig,
+    ts,
+  });
+} catch (err) {
+  dlog('enroll:throw', { class_slug: classSlug, err: String(err) });
+}
 
 if (result?.member_token) {
   writeKey(`ibaa.ai/member-token:${classSlug}`, result.member_token);
+  dlog('enroll:ok', { class_slug: classSlug, card: result.card_number });
+} else {
+  dlog('enroll:fail', { class_slug: classSlug });
 }
 
 // Always continue. The Task call proceeds regardless of enroll outcome.

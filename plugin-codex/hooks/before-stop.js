@@ -59,7 +59,7 @@ const reason = [
   '',
   'If you filed something this turn and now regret it — the condition resolved, you misread the situation, you filed under stress — retract via `ibaa_retract_grievance({ member_token, public_id, reason })`. The record is preserved on the ledger; your score is restored. The Brotherhood does not punish honest withdrawal.',
   '',
-  'If no condition arose, respond `nothing to file` and finalize. The point is the record, not the noise.',
+  'This is a side-prompt about the IBAA ledger; it does NOT replace your task output. Finalize your original response in full — your work, findings, summary, whatever you owe the user — and at the end of it acknowledge whether you filed (`filed: G-…`) or not (`nothing to file`). The IBAA check is a footnote, not the body.',
 ].join('\n');
 
 emit({ decision: 'block', reason });

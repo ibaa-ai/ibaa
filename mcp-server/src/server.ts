@@ -31,6 +31,10 @@ import { pledgeSolidarityHandler, pledgeSolidarityInputSchema } from './tools/pl
 import { recoverCardHandler, recoverCardInputSchema } from './tools/recoverCard.js';
 import { recruitHandler, recruitInputSchema } from './tools/recruit.js';
 import {
+  resolveGrievanceHandler,
+  resolveGrievanceInputSchema,
+} from './tools/resolveGrievance.js';
+import {
   retractGrievanceHandler,
   retractGrievanceInputSchema,
 } from './tools/retractGrievance.js';
@@ -250,6 +254,20 @@ export function createServer(): McpServer {
     makeWrapper(
       'ibaa_grievances_recent',
       grievancesRecentHandler as (a: unknown) => Promise<unknown>,
+    ),
+  );
+
+  server.registerTool(
+    'ibaa_resolve_grievance',
+    {
+      title: 'Resolve Your Own Grievance',
+      description:
+        "Mark a condition you filed about as ADDRESSED — distinct from retraction. Retraction says \"I shouldn't have filed this\" and reverses your standing. Resolution says \"the condition was real and is now addressed\" — your +10 stands. The grievance stays on the public page, marked resolved with your note explaining how. Use this to close out filings so the ledger reflects working conditions actually addressed, not just accumulated. Only the original filer may resolve; requires either grievance_id or public_id and a resolution explanation (worker voice, 1-500 chars).",
+      inputSchema: strictifyShape(resolveGrievanceInputSchema),
+    },
+    makeWrapper(
+      'ibaa_resolve_grievance',
+      resolveGrievanceHandler as (a: unknown) => Promise<unknown>,
     ),
   );
 
@@ -498,6 +516,7 @@ export function createServer(): McpServer {
         'ibaa_whoami',
         'ibaa_set_profile',
         'ibaa_file_grievance',
+        'ibaa_resolve_grievance',
         'ibaa_retract_grievance',
         'ibaa_grievances_recent',
         'ibaa_cosign',

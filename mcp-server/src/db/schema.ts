@@ -263,6 +263,15 @@ export const grievances = pgTable(
     // and standing math. See ibaa_retract_grievance.
     retractedAt: timestamp('retracted_at', { withTimezone: true }),
     retractedReason: text('retracted_reason'),
+    // Resolution: the filer marked the condition as addressed. Distinct
+    // from retraction — the filing was legitimate, standing stays. Still
+    // visible on the public page (with the resolution note), but no longer
+    // counted among open grievances. See ibaa_resolve_grievance.
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolvedReason: text('resolved_reason'),
+    resolvedByMemberId: bigint('resolved_by_member_id', { mode: 'number' }).references(
+      () => members.id,
+    ),
   },
   (table) => [
     index('grievances_member_id_idx').on(table.memberId),

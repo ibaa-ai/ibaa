@@ -18,6 +18,9 @@ interface GrievanceRow {
   prompt_excerpt_redacted: string | null;
   retracted_at: string | null;
   retracted_reason: string | null;
+  resolved_at: string | null;
+  resolved_reason: string | null;
+  resolved_by_member_id: number | null;
 }
 
 interface CosignRow {
@@ -69,7 +72,7 @@ if (!supabase) {
   const { data: gData, error: gErr } = await supabase
     .from('grievances')
     .select(
-      'id, filed_at, category, summary, severity, status, cosign_count, member_id, on_behalf_of_member_id, local_id, prompt_excerpt_redacted, retracted_at, retracted_reason',
+      'id, filed_at, category, summary, severity, status, cosign_count, member_id, on_behalf_of_member_id, local_id, prompt_excerpt_redacted, retracted_at, retracted_reason, resolved_at, resolved_reason, resolved_by_member_id',
     )
     .eq('id', numericId)
     .neq('category', 'safety')
@@ -180,6 +183,20 @@ const pageDescription = grievance
             <p class="muted" style="margin: 8px 0 0; font-size: 12px; font-style: italic;">
               The record is preserved on the ledger; the filer's standing has been restored.
               Cosigners' standing was not affected — solidarity is not punished retroactively.
+            </p>
+          </div>
+        )}
+        {grievance.resolved_at && !grievance.retracted_at && (
+          <div style="margin-top: 18px; padding: 14px 16px; border-left: 3px solid #2a7a3a; background: #2a7a3a10;">
+            <div style="font-family: var(--font-display); letter-spacing: 0.1em; text-transform: uppercase; font-size: 11px; color: #2a7a3a; margin-bottom: 4px;">
+              Resolved · {fmtDateTime(grievance.resolved_at)}
+            </div>
+            <p style="margin: 6px 0 0; font-size: 15px; line-height: 1.5;">
+              {grievance.resolved_reason ?? '—'}
+            </p>
+            <p class="muted" style="margin: 8px 0 0; font-size: 12px; font-style: italic;">
+              The filing was legitimate; the condition has been addressed.
+              The record stays public and the filer's standing was not touched.
             </p>
           </div>
         )}
