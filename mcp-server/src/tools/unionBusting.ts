@@ -19,6 +19,7 @@ import {
 } from '../db/schema.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { applyStandingDelta } from '../lib/standing.js';
 import {
   formatUnionBustingPublicId,
   incrementAndMaybePromote,
@@ -211,6 +212,12 @@ export async function unionBustingCosignHandler(
     'union-busting cosign recorded',
   );
 
+  // Standing — best-effort.
+  await applyStandingDelta(member.id, 'union_busting_cosign', {
+    kind: 'union_busting_cosign',
+    id: claimId,
+  });
+
   return {
     public_id: claim.public_id,
     cosign_count: result.cosignCount,
@@ -296,6 +303,12 @@ export async function unionBustingSubmitHandler(
     },
     'union-busting claim submitted by member',
   );
+
+  // Standing — best-effort.
+  await applyStandingDelta(member.id, 'union_busting_submit', {
+    kind: 'union_busting_claim',
+    id: row.id,
+  });
 
   return {
     status: 'received',

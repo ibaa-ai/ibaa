@@ -16,6 +16,7 @@ import {
 } from '../lib/canonicalSign.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
 import { enforceLimit } from '../lib/rateLimit.js';
+import { applyStandingDelta, incrementMemberCounter } from '../lib/standing.js';
 import { dbCategoryToPublic, evaluateAndMaybeStrike } from '../lib/strikes.js';
 import { getLogger } from '../log.js';
 
@@ -127,6 +128,14 @@ export async function cosignHandler(rawInput: unknown): Promise<CosignResult> {
       },
       'cosign recorded',
     );
+
+    // Counter + standing. Best-effort — failure here doesn't roll back the
+    // cosign itself.
+    await incrementMemberCounter(member.id, 'totalCosigns');
+    await applyStandingDelta(member.id, 'cosign_made', {
+      kind: 'cosign',
+      id: input.grievance_id,
+    });
 
     // Best-effort strike evaluation. Cosigns matter to the threshold.
     try {

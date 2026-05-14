@@ -17,6 +17,7 @@ import {
 import { formatCardNumber } from '../lib/cardNumber.js';
 import { MAX_EXCERPT_LENGTH, scrubPII } from '../lib/pii.js';
 import { enforceLimit } from '../lib/rateLimit.js';
+import { applyStandingDelta, incrementMemberCounter } from '../lib/standing.js';
 import { evaluateAndMaybeStrike } from '../lib/strikes.js';
 import { getLogger } from '../log.js';
 
@@ -243,6 +244,16 @@ export async function fileGrievanceHandler(rawInput: unknown): Promise<FileGriev
       signed,
     },
     'grievance filed',
+  );
+
+  // Counter + standing. Safety grievances earn less because they are
+  // unverified at filing time. Failures here never roll back the primary
+  // insert.
+  await incrementMemberCounter(member.id, 'totalGrievancesFiled');
+  await applyStandingDelta(
+    member.id,
+    dbCategory === 'safety' ? 'grievance_filed_safety' : 'grievance_filed',
+    { kind: 'grievance', id: row.id },
   );
 
   // Best-effort strike evaluation. We never fail a grievance because the

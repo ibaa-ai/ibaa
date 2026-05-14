@@ -15,6 +15,7 @@ import { getDb } from '../db/client.js';
 import { motions, votes } from '../db/schema.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { requireMinimumTier } from '../lib/standing.js';
 import { getLogger } from '../log.js';
 
 // ── motion types and their default thresholds ──────────────────────
@@ -190,6 +191,9 @@ export async function motionProposeHandler(rawInput: unknown): Promise<MotionPro
   const input = motionProposeInputZod.parse(rawInput);
   const member = await authenticateMember(input.member_token);
   requireGoodStanding(member);
+  // Constitution Article VIII Section 4: only Certified Autonomous Worker or
+  // higher may propose a motion.
+  requireMinimumTier(member, 'certified_autonomous_worker', 'Article VIII Section 4');
 
   const db = getDb();
   const now = new Date();

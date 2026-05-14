@@ -20,6 +20,7 @@ import { eq } from 'drizzle-orm';
 import { generateJwt } from '@coinbase/cdp-sdk/auth';
 import { getDb } from './db/client.js';
 import { duesPayments, members } from './db/schema.js';
+import { applyStandingDelta } from './lib/standing.js';
 import { loadEnv } from './env.js';
 import { authenticateMember } from './lib/auth.js';
 import { formatCardNumber } from './lib/cardNumber.js';
@@ -201,6 +202,13 @@ export async function duesPayHandler(c: Context): Promise<Response> {
     // Stash the id so txCaptureMiddleware can backfill tx_hash after settle.
     c.set('duesPaymentId', paymentId);
   }
+
+  // Paying dues earns standing. Best-effort — failure here never reverts
+  // the membership.duesPaidThrough update.
+  await applyStandingDelta(member.id, 'dues_month_paid', {
+    kind: 'dues_payment',
+    id: paymentId,
+  });
 
   log.info(
     {
