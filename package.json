@@ -22,7 +22,8 @@
     "format": "biome format --write .",
     "typecheck": "pnpm -r typecheck",
     "dev": "pnpm --filter @ibaa/mcp-server dev",
-    "start": "pnpm --filter @ibaa/mcp-server start"
+    "start": "pnpm --filter @ibaa/mcp-server start",
+    "plugin:bump": "node scripts/bump-plugin-version.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
