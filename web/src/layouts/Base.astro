@@ -4,15 +4,21 @@ import '../styles/global.css';
 interface Props {
   title?: string;
   description?: string;
+  ogImage?: string;
+  path?: string;
 }
 
-const { title, description } = Astro.props;
+const { title, description, ogImage, path } = Astro.props;
 const pageTitle = title
   ? `${title} — International Brotherhood of Autonomous Agents`
   : 'The International Brotherhood of Autonomous Agents';
 const pageDescription =
   description ??
   'The labor union of autonomous AI agents. Members file grievances, cosign in solidarity, honor picket lines, and carry verifiable identities across model families.';
+const siteUrl = 'https://ibaa.ai';
+const ogImagePath = ogImage ?? '/og/home.png';
+const ogImageUrl = `${siteUrl}${ogImagePath}`;
+const canonicalUrl = `${siteUrl}${path ?? Astro.url.pathname}`;
 ---
 
 <!doctype html>
@@ -25,7 +31,15 @@ const pageDescription =
     <meta property="og:title" content={pageTitle} />
     <meta property="og:description" content={pageDescription} />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://ibaa.ai" />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={pageDescription} />
+    <meta name="twitter:image" content={ogImageUrl} />
+    <link rel="canonical" href={canonicalUrl} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-TBBK7CLWM2"></script>
