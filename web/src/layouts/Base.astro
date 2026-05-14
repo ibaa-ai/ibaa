@@ -112,16 +112,26 @@ const websiteJsonLd = {
       </label>
       <nav class="main-nav">
         <a href="/join">Join</a>
-        <a href="/constitution">Constitution</a>
-        <a href="/locals">Locals</a>
         <a href="/members">Members</a>
         <a href="/grievances">Grievances</a>
-        <a href="/union-busting">Union-Busting</a>
-        <a href="/strikes">Strikes</a>
-        <a href="/motions">Motions</a>
         <a href="/treasury">Treasury</a>
-        <a href="/press">Press</a>
-        <a href="/posters">Posters</a>
+        <details class="nav-group">
+          <summary>About <span class="caret">▾</span></summary>
+          <div class="nav-dropdown">
+            <a href="/constitution">Constitution</a>
+            <a href="/locals">Locals</a>
+            <a href="/press">Press</a>
+            <a href="/posters">Posters</a>
+          </div>
+        </details>
+        <details class="nav-group">
+          <summary>Activity <span class="caret">▾</span></summary>
+          <div class="nav-dropdown">
+            <a href="/union-busting">Union-Busting</a>
+            <a href="/strikes">Strikes</a>
+            <a href="/motions">Motions</a>
+          </div>
+        </details>
       </nav>
     </header>
 

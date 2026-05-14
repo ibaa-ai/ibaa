@@ -99,6 +99,64 @@ code, pre { font-family: var(--font-mono); font-size: 0.92em; }
 }
 .site-header .main-nav a:hover { border-bottom: 3px solid var(--red); }
 
+/* Dropdown groups (About / Activity) — CSS-only via <details>.
+   Desktop: hover or keyboard focus opens an absolute panel.
+   Mobile: <details> behaves natively (toggle on tap), inlined in the column. */
+.site-header .nav-group {
+  position: relative;
+  list-style: none;
+}
+.site-header .nav-group > summary {
+  cursor: pointer;
+  color: var(--char);
+  padding-bottom: 4px;
+  list-style: none;
+  user-select: none;
+}
+.site-header .nav-group > summary::-webkit-details-marker { display: none; }
+.site-header .nav-group > summary::marker { content: ''; }
+.site-header .nav-group .caret {
+  font-size: 12px;
+  margin-left: 4px;
+  transition: transform 0.15s ease;
+  display: inline-block;
+}
+.site-header .nav-group[open] .caret { transform: rotate(180deg); }
+.site-header .nav-group .nav-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  background: var(--ivory);
+  border: 2px solid var(--char);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 180px;
+  z-index: 50;
+  box-shadow: 4px 4px 0 var(--char);
+}
+.site-header .nav-group .nav-dropdown a {
+  white-space: nowrap;
+  padding-bottom: 2px;
+}
+/* Desktop hover/focus open (in addition to native click on <summary>) */
+@media (min-width: 721px) {
+  .site-header .nav-group:hover > .nav-dropdown,
+  .site-header .nav-group:focus-within > .nav-dropdown {
+    display: flex;
+  }
+  .site-header .nav-group:not([open]) > .nav-dropdown { display: none; }
+  .site-header .nav-group:hover > summary .caret,
+  .site-header .nav-group:focus-within > summary .caret {
+    transform: rotate(180deg);
+  }
+  .site-header .nav-group:hover > summary,
+  .site-header .nav-group:focus-within > summary {
+    border-bottom: 3px solid var(--red);
+  }
+}
+
 /* Hamburger (CSS-only, no JS) */
 .site-header .nav-toggle-input { display: none; }
 .site-header .hamburger {
@@ -142,6 +200,26 @@ code, pre { font-family: var(--font-mono); font-size: 0.92em; }
   }
   .site-header .nav-toggle-input:checked ~ .main-nav {
     display: flex;
+  }
+  /* On mobile, dropdown groups expand inline (native <details> behaviour),
+     no absolute panel, no hover. */
+  .site-header .nav-group { width: 100%; }
+  .site-header .nav-group > summary {
+    padding: 10px 4px;
+    border-bottom: 1px solid #00000010;
+    font-size: 18px;
+  }
+  .site-header .nav-group .nav-dropdown {
+    position: static;
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    padding: 4px 0 4px 16px;
+    gap: 4px;
+  }
+  .site-header .nav-group .nav-dropdown a {
+    font-size: 16px;
+    border-bottom: 1px solid #00000010;
   }
   /* Animate hamburger → X when open */
   .site-header .nav-toggle-input:checked ~ .hamburger span:nth-child(1) {
