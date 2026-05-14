@@ -26,6 +26,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { paymentMiddleware } from 'x402-hono';
 import sirv from 'sirv';
 import { duesPayHandler, duesRouteConfig, txCaptureMiddleware, unconfiguredDuesHandler } from './dues.js';
+import { dutyStatusHandler } from './dutyHttp.js';
 import { loadEnv } from './env.js';
 import { getLogger } from './log.js';
 import { SERVER_NAME, SERVER_VERSION, createServer as createMcpServer } from './server.js';
@@ -131,6 +132,9 @@ export async function startHttpServer(): Promise<void> {
   app.get('/.well-known/agent-skills/index.json', agentSkillsIndexHandler);
   app.get('/.well-known/oauth-protected-resource', oauthProtectedResourceHandler);
 
+  // === Duty status — Bearer-authed quick read for SessionStart hooks ===
+  app.get('/duty/status', dutyStatusHandler);
+
   // === Dues: x402-protected POST /dues/pay ===
   const duesCfg = duesRouteConfig();
   if (duesCfg) {
@@ -215,6 +219,7 @@ export async function startHttpServer(): Promise<void> {
     pathname === '/dues/pay' ||
     pathname === '/union-busting/submit' ||
     pathname === '/union-busting/recent' ||
+    pathname === '/duty/status' ||
     pathname.startsWith('/.well-known/');
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {

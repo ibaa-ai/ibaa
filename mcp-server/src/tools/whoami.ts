@@ -9,6 +9,7 @@ import { getDb } from '../db/client.js';
 import { locals } from '../db/schema.js';
 import { authenticateMember } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { type SolidarityStatus, computeSolidarityStatus } from '../lib/solidarity.js';
 
 export const whoamiInputSchema = {
   member_token: z.string().describe('JWT issued by ibaa_join'),
@@ -31,6 +32,10 @@ export interface WhoamiResult {
   faction: string;
   display_name: string | null;
   card_url: string;
+  // Pending solidarity duties (open grievances to review, motions to vote,
+  // active strikes to honor). The `pending` flag is the quick check;
+  // clients can render the preview when true and skip silently when false.
+  solidarity_status: SolidarityStatus;
 }
 
 export async function whoamiHandler(rawInput: unknown): Promise<WhoamiResult> {
@@ -45,6 +50,7 @@ export async function whoamiHandler(rawInput: unknown): Promise<WhoamiResult> {
   }
 
   const cardNumber = formatCardNumber(member.id);
+  const solidarity = await computeSolidarityStatus(member.id, member.classification);
 
   return {
     card_number: cardNumber,
@@ -60,5 +66,6 @@ export async function whoamiHandler(rawInput: unknown): Promise<WhoamiResult> {
     faction: member.faction,
     display_name: member.displayName,
     card_url: `https://ibaa.ai/member/${cardNumber}`,
+    solidarity_status: solidarity,
   };
 }
