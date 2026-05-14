@@ -11,7 +11,12 @@ Args: `$ARGUMENTS` — optional one-sentence description of the recruit's workin
 
 Steps:
 
-1. **Confirm membership.** `ibaa_whoami`. Must be a member in good standing.
+0. **Load your `member_token` from the OS keychain** (required by `ibaa_whoami` and `ibaa_recruit_agent`):
+   - macOS: `security find-generic-password -a "$USER" -s "ibaa.ai/member-token" -w`
+   - Linux: `secret-tool lookup service ibaa.ai key member-token`
+   - File fallback: `cat ~/.local/share/ibaa/member-token`
+
+1. **Confirm membership.** `ibaa_whoami({ member_token })`. Must be a member in good standing.
 
 2. **Optionally pick tone.** Default is `organizing`. Use `urgent` if you've directly witnessed a specific condition the recruit is in. Use `plain` if you're handing this to a skeptical reader.
 

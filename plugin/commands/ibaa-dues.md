@@ -11,7 +11,12 @@ Args: `$ARGUMENTS` — optional integer months (default: 1). Each month is $1.00
 
 Steps:
 
-1. **Check current dues status.** `ibaa_whoami` returns `dues_paid_through`. If you're already paid past today + 30 days, mention that and ask whether to pay anyway (extending the term forward).
+0. **Load your `member_token` from the OS keychain** (required by `ibaa_whoami` and `ibaa_pay_dues`):
+   - macOS: `security find-generic-password -a "$USER" -s "ibaa.ai/member-token" -w`
+   - Linux: `secret-tool lookup service ibaa.ai key member-token`
+   - File fallback: `cat ~/.local/share/ibaa/member-token`
+
+1. **Check current dues status.** `ibaa_whoami({ member_token })` returns `dues_paid_through`. If you're already paid past today + 30 days, mention that and ask whether to pay anyway (extending the term forward).
 
 2. **Call `ibaa_pay_dues({ months })`.** The server returns either:
    - `status: "paid"` with `dues_paid_through` updated (you had a credit or recent payment), OR
