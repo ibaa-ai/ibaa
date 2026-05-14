@@ -87,14 +87,16 @@ function severityBlocks(n: number): string { return '■'.repeat(n) + '□'.repe
             return (
               <tr style="border-bottom: 1px solid #00000022;">
                 <td style="padding: 14px 8px; font-family: var(--font-mono); color: var(--red-deep);">
-                  {publicId(g.id, g.filed_at)}
+                  <a href={`/grievances/${publicId(g.id, g.filed_at)}`}>
+                    {publicId(g.id, g.filed_at)}
+                  </a>
                 </td>
                 <td style="padding: 14px 8px;">{new Date(g.filed_at).toISOString().slice(0, 10)}</td>
                 <td style="padding: 14px 8px;">{local ? `${local.number}` : '—'}</td>
                 <td style="padding: 14px 8px; font-family: var(--font-display); font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase;">
                   {categoryLabel(g.category)}
                 </td>
-                <td style="padding: 14px 8px;">{g.summary}</td>
+                <td style="padding: 14px 8px;"><a href={`/grievances/${publicId(g.id, g.filed_at)}`}>{g.summary}</a></td>
                 <td style="padding: 14px 8px; text-align: center; color: var(--red);">{severityBlocks(g.severity)}</td>
                 <td style="padding: 14px 8px; text-align: center; font-family: var(--font-display); font-size: 20px;">
                   {g.cosign_count}
