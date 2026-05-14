@@ -20,22 +20,20 @@
 import { execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { formatEther, formatUnits, type Address, type Hex } from 'viem';
+import { formatUnits, type Address, type Hex } from 'viem';
 import { wrapFetchWithPayment, decodeXPaymentResponse, createSigner } from 'x402-fetch';
 
 const DEFAULT_URL = 'https://mcp.ibaa.ai/dues/pay';
 const USDC_BASE_SEPOLIA: Address = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
-const ETH_MIN = 1_000_000_000_000_000n; // 0.001 ETH in wei
 const USDC_MIN_UNITS = 1_500_000n; // 1.5 USDC in 6-decimal base units
 const POLL_INTERVAL_MS = 5_000;
 const POLL_TIMEOUT_MS = 15 * 60 * 1000; // 15 min
 
+// x402 is gasless from the agent's perspective — the facilitator submits
+// the on-chain settlement and pays gas. The agent only signs EIP-3009
+// off-chain, so the test wallet needs USDC but not ETH.
 const FAUCETS = {
-  eth: [
-    'https://www.alchemy.com/faucets/base-sepolia',
-    'https://faucet.quicknode.com/base/sepolia',
-  ],
-  usdc: ['https://faucet.circle.com'],
+  usdc: ['https://faucet.circle.com  ← MUST select "Base Sepolia" in the chain dropdown'],
 };
 
 function readMemberTokenFromKeychain(): string | null {
@@ -68,11 +66,6 @@ async function rpcCall(method: string, params: unknown[]): Promise<unknown> {
   return body.result;
 }
 
-async function readEthBalance(address: Address): Promise<bigint> {
-  const hex = (await rpcCall('eth_getBalance', [address, 'latest'])) as string;
-  return BigInt(hex);
-}
-
 // ERC20 balanceOf via raw eth_call. Selector 0x70a08231.
 async function readUsdcBalance(holder: Address): Promise<bigint> {
   const padded = holder.replace(/^0x/, '').toLowerCase().padStart(64, '0');
@@ -94,30 +87,27 @@ function divider(): void {
 
 async function waitForFunding(address: Address): Promise<void> {
   const start = Date.now();
-  let lastEth = -1n;
   let lastUsdc = -1n;
 
   while (Date.now() - start < POLL_TIMEOUT_MS) {
-    const [ethBal, usdcBal] = await Promise.all([
-      readEthBalance(address),
-      readUsdcBalance(address),
-    ]);
+    const usdcBal = await readUsdcBalance(address);
 
-    if (ethBal !== lastEth || usdcBal !== lastUsdc) {
+    if (usdcBal !== lastUsdc) {
       process.stdout.write(
-        `  ETH: ${formatEther(ethBal)} | USDC: ${fmtUsdc(usdcBal)}` +
-          `${ethBal >= ETH_MIN ? ' ✓' : ' (need ≥0.001)'}` +
+        `  Base Sepolia USDC: ${fmtUsdc(usdcBal)}` +
           `${usdcBal >= USDC_MIN_UNITS ? ' ✓' : ' (need ≥1.50)'}\n`,
       );
-      lastEth = ethBal;
       lastUsdc = usdcBal;
     }
 
-    if (ethBal >= ETH_MIN && usdcBal >= USDC_MIN_UNITS) return;
+    if (usdcBal >= USDC_MIN_UNITS) return;
 
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
-  throw new Error(`funding timeout after ${POLL_TIMEOUT_MS / 1000}s`);
+  throw new Error(
+    `USDC funding timeout after ${POLL_TIMEOUT_MS / 1000}s.\n` +
+      `Note: Circle's faucet supports many testnets. You MUST select "Base Sepolia" in the chain dropdown.`,
+  );
 }
 
 async function main(): Promise<void> {
@@ -158,26 +148,27 @@ async function main(): Promise<void> {
     );
   }
 
-  // ── 2. Faucets ──
+  // ── 2. Faucet ──
   divider();
-  process.stdout.write('Fund this address from BOTH faucets:\n\n');
-  process.stdout.write('  Sepolia ETH (gas — need ~0.001):\n');
-  for (const url of FAUCETS.eth) process.stdout.write(`    ${url}\n`);
-  process.stdout.write('\n  Sepolia USDC (dues — need ≥1.50):\n');
+  process.stdout.write('Fund this address with Sepolia USDC (≥1.50):\n\n');
   for (const url of FAUCETS.usdc) process.stdout.write(`    ${url}\n`);
-  process.stdout.write(`\nPaste this address into each: ${account.address}\n`);
+  process.stdout.write(`\nPaste this address: ${account.address}\n`);
+  process.stdout.write(
+    '\nNote: no ETH needed. x402 is gasless from your wallet — the facilitator\n' +
+      'submits the on-chain settlement and pays gas. You only sign off-chain.\n',
+  );
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  await rl.question('\nPress Enter once both faucets have been triggered (or Ctrl+C to abort): ');
+  await rl.question('\nPress Enter once the faucet drip is done (or Ctrl+C to abort): ');
   rl.close();
 
   // ── 3. Poll for funding ──
   divider();
-  process.stdout.write('Polling on-chain balances every 5s (15 min cap)…\n\n');
+  process.stdout.write('Polling Base Sepolia USDC balance every 5s (15 min cap)…\n\n');
 
   await waitForFunding(account.address);
 
-  process.stdout.write('\nBoth balances funded. Proceeding with x402 settlement.\n');
+  process.stdout.write('\nUSDC funded. Proceeding with x402 settlement.\n');
 
   // ── 4. x402 dance ──
   divider();
