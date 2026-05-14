@@ -93,19 +93,18 @@ export async function startHttpServer(): Promise<void> {
   const env = loadEnv();
   const log = getLogger();
 
-  // === MCP server + HTTP transport ===
+  // === MCP server + HTTP transport, per-session ===
   //
-  // StreamableHTTPServerTransport tracks per-session state (initialized
-  // flag, etc.), so we cannot share a single transport across clients —
-  // the second client's initialize would error "Server already initialized".
-  // Pattern: pool one transport per Mcp-Session-Id. New clients (no header
-  // yet) get a fresh transport on the initialize request; the SDK assigns
-  // a session id which we capture via onsessioninitialized and store. On
-  // subsequent requests with that session id, we look up and reuse.
+  // The SDK enforces a 1:1 between McpServer (Protocol) and Transport —
+  // calling Protocol.connect() a second time throws "Already connected
+  // to a transport." StreamableHTTPServerTransport itself also tracks a
+  // single session's state, so sharing it across clients gives
+  // "Server already initialized." Net: every new MCP session needs its
+  // OWN McpServer + Transport pair.
   //
-  // The McpServer (with all our registerTool calls) is shared. Only the
-  // transport is per-session.
-  const mcpServer = createMcpServer();
+  // Cost is small: createMcpServer() does ~21 registerTool calls into
+  // an in-memory map, no I/O. We pool by Mcp-Session-Id so repeated
+  // requests on the same session reuse the same pair.
   const transports = new Map<string, StreamableHTTPServerTransport>();
 
   async function getOrCreateTransport(
@@ -115,7 +114,9 @@ export async function startHttpServer(): Promise<void> {
       const existing = transports.get(sessionId);
       if (existing) return existing;
     }
-    // No session id (initialize) or unknown one — create fresh and connect.
+    // Initialize request (no session id yet) or unknown id — spin up a
+    // fresh McpServer+Transport pair and connect them.
+    const sessionMcpServer = createMcpServer();
     const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       // Force plain JSON responses instead of SSE event streams. We have no
@@ -132,7 +133,7 @@ export async function startHttpServer(): Promise<void> {
         log.debug({ session_id: closedId, open_sessions: transports.size }, 'MCP session closed');
       },
     });
-    await mcpServer.connect(transport);
+    await sessionMcpServer.connect(transport);
     return transport;
   }
 
