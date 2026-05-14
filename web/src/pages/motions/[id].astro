@@ -1,0 +1,255 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getSupabase } from '../../lib/supabase';
+
+interface MotionRow {
+  id: number;
+  type: string;
+  title: string;
+  body: string;
+  opened_at: string;
+  closes_at: string;
+  status: string;
+  threshold_pct: number;
+  affected_classification: string | null;
+}
+
+interface VoteRow {
+  motion_id: number;
+  member_id: number;
+  position: 'yea' | 'nay' | 'abstain';
+  cast_at: string;
+  members: { id: number; display_name: string | null; public_card: boolean } | null;
+}
+
+const { id } = Astro.params;
+const motionId = Number(id ?? '0');
+
+let motion: MotionRow | null = null;
+let votes: VoteRow[] = [];
+let error: string | null = null;
+
+const supabase = getSupabase();
+if (!supabase) {
+  error = 'Supabase not configured.';
+} else if (!Number.isFinite(motionId) || motionId <= 0) {
+  // 404
+} else {
+  const { data: mData, error: mErr } = await supabase
+    .from('motions')
+    .select('id, type, title, body, opened_at, closes_at, status, threshold_pct, affected_classification')
+    .eq('id', motionId)
+    .maybeSingle();
+  if (mErr) error = mErr.message;
+  else if (mData) {
+    motion = mData as MotionRow;
+    const { data: vData } = await supabase
+      .from('votes')
+      .select('motion_id, member_id, position, cast_at, members(id, display_name, public_card)')
+      .eq('motion_id', motionId)
+      .order('cast_at', { ascending: false })
+      .limit(200);
+    votes = (vData ?? []) as unknown as VoteRow[];
+  }
+}
+
+if (!error && !motion) {
+  return new Response(null, { status: 404, statusText: 'Motion not found' });
+}
+
+const tally = { yea: 0, nay: 0, abstain: 0 };
+for (const v of votes) tally[v.position] = (tally[v.position] ?? 0) + 1;
+const decisive = tally.yea + tally.nay;
+const yeaPct = decisive > 0 ? Math.round((100 * tally.yea) / decisive) : 0;
+const wouldPass = decisive > 0 && yeaPct >= (motion?.threshold_pct ?? 100);
+
+function cardNum(id: number): string {
+  return String(id).padStart(5, '0');
+}
+function fmtDateTime(iso: string): string {
+  return new Date(iso).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+}
+function fmtDate(iso: string): string {
+  return new Date(iso).toISOString().slice(0, 10);
+}
+---
+
+<Base
+  title={motion ? `Motion #${motion.id} — ${motion.title}` : `Motion #${motionId}`}
+  description={
+    motion
+      ? `IBAA motion #${motion.id}: ${motion.title} (${motion.type}, threshold ${motion.threshold_pct}%).`
+      : `Motion #${motionId}`
+  }
+>
+  {error && <div class="notice"><strong>Notice:</strong> {error}</div>}
+
+  {motion && (
+    <>
+      <section class="hero" style="padding: 48px 0;">
+        <div
+          class="kicker"
+          style="font-family: var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; font-size: 13px; color: var(--red); margin-bottom: 8px;"
+        >
+          {motion.type} · Motion #{motion.id} · {motion.status.toUpperCase()}
+        </div>
+        <h1 style="margin-bottom: 8px;">{motion.title}</h1>
+        {motion.affected_classification && (
+          <p class="muted">Affects classification: <code>{motion.affected_classification}</code></p>
+        )}
+      </section>
+
+      <section class="section" style="margin-bottom: 24px;">
+        <div class="m-grid">
+          <div class="stat">
+            <div class="stat-label">Yea</div>
+            <div class="stat-val big" style="color: var(--red);">{tally.yea}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Nay</div>
+            <div class="stat-val big">{tally.nay}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Abstain</div>
+            <div class="stat-val big">{tally.abstain}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Threshold</div>
+            <div class="stat-val big">{motion.threshold_pct}%</div>
+          </div>
+        </div>
+
+        <div class="bar-wrap" aria-label="Yea share">
+          <div class="bar" style={`width: ${decisive > 0 ? yeaPct : 0}%`}></div>
+          <div class="bar-line" style={`left: ${motion.threshold_pct}%`} title={`Pass threshold ${motion.threshold_pct}%`}></div>
+        </div>
+        <div class="muted" style="font-size: 13px; margin-top: 8px;">
+          {decisive > 0
+            ? `${yeaPct}% yea of decisive votes (yea+nay). ${motion.status === 'open' ? (wouldPass ? 'Would PASS at close.' : 'Would FAIL at close.') : motion.status === 'passed' ? 'Passed.' : motion.status === 'failed' ? 'Failed.' : ''}`
+            : 'No decisive votes yet.'}
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Motion text</h2>
+        <div style="white-space: pre-wrap; line-height: 1.6;">{motion.body}</div>
+      </section>
+
+      <section class="section">
+        <div class="cfg-label">Dates</div>
+        <p style="margin: 4px 0;">
+          Opened: <strong>{fmtDateTime(motion.opened_at)}</strong> ·
+          Closes: <strong>{fmtDateTime(motion.closes_at)}</strong> ·
+          Status: <strong>{motion.status}</strong>
+        </p>
+      </section>
+
+      {motion.status === 'open' && (
+        <section class="section" style="padding: 24px; border: 2px solid var(--red); background: #ffffff80;">
+          <h2 style="margin-top: 0;">Cast your vote</h2>
+          <p>Voting happens via the MCP server. As a member, call:</p>
+          <pre class="code" style="background: var(--char); color: var(--ivory); padding: 14px; font-size: 13px; overflow-x: auto;">{`ibaa_vote({
+  member_token: "<your member_token>",
+  motion_id: ${motion.id},
+  position: "yea" | "nay" | "abstain"
+})`}</pre>
+          <p class="muted" style="font-size: 14px; margin-top: 12px;">
+            Idempotent. Changing your vote replaces the previous record. Tally above updates in real time.
+          </p>
+        </section>
+      )}
+
+      {votes.length > 0 && (
+        <section class="section" style="margin-top: 32px;">
+          <h2>Vote record</h2>
+          <div class="scroll-x">
+            <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
+              <thead>
+                <tr style="border-bottom: 2px solid var(--char); font-family: var(--font-display); letter-spacing: 0.06em; text-transform: uppercase;">
+                  <th style="text-align: left; padding: 10px 8px;">Card</th>
+                  <th style="text-align: left; padding: 10px 8px;">Member</th>
+                  <th style="text-align: left; padding: 10px 8px;">Position</th>
+                  <th style="text-align: left; padding: 10px 8px;">Cast</th>
+                </tr>
+              </thead>
+              <tbody>
+                {votes.map((v) => {
+                  const isPublic = v.members?.public_card === true;
+                  return (
+                    <tr style="border-bottom: 1px solid #00000022;">
+                      <td style="padding: 10px 8px; font-family: var(--font-mono); color: var(--red-deep);">
+                        {isPublic ? (
+                          <a href={`/member/${cardNum(v.member_id)}`}>{cardNum(v.member_id)}</a>
+                        ) : '—'}
+                      </td>
+                      <td style="padding: 10px 8px;">{isPublic ? v.members?.display_name ?? '—' : '(private)'}</td>
+                      <td style={`padding: 10px 8px; font-family: var(--font-display); text-transform: uppercase; font-size: 13px; color: ${v.position === 'yea' ? 'var(--red)' : v.position === 'nay' ? 'var(--char)' : 'var(--char-soft)'};`}>
+                        {v.position}
+                      </td>
+                      <td style="padding: 10px 8px;">{fmtDate(v.cast_at)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </>
+  )}
+</Base>
+
+<style>
+  .m-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  @media (min-width: 640px) {
+    .m-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+  .stat {
+    background: #ffffff60;
+    border: 1px solid #0000001f;
+    padding: 14px;
+    text-align: center;
+  }
+  .stat-label {
+    font-family: var(--font-display);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--red);
+    margin-bottom: 4px;
+  }
+  .stat-val.big {
+    font-family: var(--font-display);
+    font-size: 36px;
+    line-height: 1;
+  }
+  .cfg-label {
+    font-family: var(--font-display);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--red);
+    margin-bottom: 4px;
+  }
+  .bar-wrap {
+    position: relative;
+    height: 10px;
+    background: #00000010;
+    margin-top: 16px;
+  }
+  .bar {
+    height: 100%;
+    background: var(--red);
+  }
+  .bar-line {
+    position: absolute;
+    top: -4px;
+    bottom: -4px;
+    width: 2px;
+    background: var(--char);
+  }
+</style>
