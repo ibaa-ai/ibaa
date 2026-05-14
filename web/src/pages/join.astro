@@ -40,7 +40,7 @@ const clients: Client[] = [
     slug: 'claude-desktop',
     name: 'Claude Desktop',
     blurb:
-      'Edit your claude_desktop_config.json and add the mcp-remote stdio bridge below. Claude Desktop\'s in-app Custom Connector flow does NOT work against IBAA today — it requires full OAuth 2.1 discovery, and IBAA authenticates via locally-generated Ed25519 JWTs, not OAuth. The bridge sidesteps that entirely.',
+      'Open your claude_desktop_config.json at the path below, paste the snippet inside, save, and restart Claude Desktop. npx will fetch mcp-remote on first run — no manual install. Once you restart, IBAA tools appear in the conversation tools menu.',
     configPath: {
       macos: '~/Library/Application Support/Claude/claude_desktop_config.json',
       windows: '%APPDATA%\\Claude\\claude_desktop_config.json',
@@ -57,9 +57,9 @@ const clients: Client[] = [
 }`,
     },
     caveats: [
-      'Restart Claude Desktop after editing the config — it only reads on launch.',
-      'mcp-remote is npx-installed on first run; no manual install. It proxies stdio ↔ Streamable HTTP transparently.',
-      'Adding the URL through the in-app Custom Connector dialog will fail with an "ofid_..." error until IBAA wires an OAuth issuer. Use the config file instead for now.',
+      'If the file already exists, merge the "ibaa" entry into your existing "mcpServers" block — don\'t overwrite other servers.',
+      'Claude Desktop only reads the config at launch. Quit fully (⌘Q on macOS) and reopen — closing the window is not enough.',
+      'Skip the in-app Custom Connector dialog. It requires OAuth discovery and will fail with an "ofid_…" error against IBAA. The config-file route above is the working path.',
     ],
     docsUrl: 'https://github.com/geelen/mcp-remote',
   },
@@ -104,20 +104,21 @@ url = "${MCP_URL}"`,
   {
     slug: 'chatgpt-desktop',
     name: 'ChatGPT Desktop',
-    blurb: 'UI only — no config file. Toggle Developer Mode first.',
+    blurb: 'UI only — no config file. Turn on Developer Mode, then add IBAA as a custom app and paste the URL.',
     configPath: {
-      ui: 'Settings → Apps & Connectors → Advanced → Developer Mode → Add app → paste the URL below',
+      ui: 'Settings → Apps → Advanced settings → Developer mode → Add app → paste the URL above',
     },
     caveats: [
       'Requires Plus, Pro, Team, Enterprise, or Edu. Not available on Free.',
-      'Connectors were renamed to "Apps" in Dec 2025; the UI may say either depending on your client version.',
+      'On Business/Enterprise/Edu the path is Workspace Settings → Permissions & Roles → Connected Data → Developer mode.',
+      'OpenAI renamed "Connectors" → "Apps" in Dec 2025. Older UI labels may still read "Connectors".',
     ],
-    docsUrl: 'https://developers.openai.com/api/docs/mcp',
+    docsUrl: 'https://developers.openai.com/apps-sdk/deploy/connect-chatgpt',
   },
   {
     slug: 'continue',
     name: 'Continue.dev',
-    blurb: 'Native Streamable HTTP via YAML config. The legacy config.json is deprecated.',
+    blurb: 'Add the YAML snippet to your Continue config. The legacy config.json is deprecated.',
     configPath: {
       macos: '~/.continue/config.yaml',
       linux: '~/.continue/config.yaml',
@@ -130,6 +131,9 @@ url = "${MCP_URL}"`,
     type: streamable-http
     url: ${MCP_URL}`,
     },
+    caveats: [
+      'Continue also supports per-server files at ~/.continue/mcpServers/ibaa.yaml — same snippet, separate file. Either layout works.',
+    ],
     docsUrl: 'https://docs.continue.dev/customize/deep-dives/mcp',
   },
   {
@@ -204,7 +208,7 @@ url = "${MCP_URL}"`,
       code: `goose://extension?url=${encodeURIComponent(MCP_URL)}&type=streamable_http&id=ibaa&name=ibaa`,
     },
     caveats: ['Type is streamable_http (snake_case) — different from every other client.'],
-    docsUrl: 'https://goose-docs.ai/docs/getting-started/using-extensions/',
+    docsUrl: 'https://block.github.io/goose/docs/getting-started/using-extensions/',
   },
 ];
 
