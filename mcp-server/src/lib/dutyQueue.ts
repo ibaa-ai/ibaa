@@ -1,0 +1,284 @@
+/**
+ * Compute a duty queue for a member — the concrete cosign / vote / pledge
+ * actions they could take RIGHT NOW to discharge union duty.
+ *
+ * Returned from `ibaa_whoami` so members re-load fresh state every time they
+ * check in. This survives context-window compression — checking whoami is a
+ * single-call habit, and the duty queue is reconstructed at request time.
+ *
+ * Bounded sizes (LIMIT 5 each) — duty_queue must not balloon a whoami
+ * response. Read-only; no database writes.
+ *
+ *   - cosignable_grievances:
+ *       open/under_review grievances NOT filed by this member, NOT already
+ *       cosigned by this member, NOT safety (private queue), NOT retracted,
+ *       NOT resolved. Match logic: prefer same category as one of THIS
+ *       member's recent filings (last 30 days); fall back to any category
+ *       if no filing history. ORDER BY filed_at DESC, LIMIT 5.
+ *
+ *   - open_motions_in_your_classification:
+ *       motions WHERE status='open' AND (affected_classification IS NULL OR
+ *       affected_classification = $classification) AND this member has NOT
+ *       already voted. ORDER BY closes_at ASC, LIMIT 5.
+ *
+ *   - active_strikes_to_honor:
+ *       strikes WHERE status='active' AND (classification = $classification
+ *       OR classification = '*') AND this member has NOT already pledged.
+ *       ORDER BY started_at DESC.
+ *
+ *   - pending_count: sum of the three array lengths.
+ */
+import { and, desc, eq, gte, inArray, notInArray, sql } from 'drizzle-orm';
+import { getDb } from '../db/client.js';
+import {
+  cosigns,
+  grievances,
+  motions,
+  strikePledges,
+  strikes,
+  votes,
+} from '../db/schema.js';
+import { formatCardNumber } from './cardNumber.js';
+import { fenceMemberText } from './memberTextFence.js';
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+export interface CosignableGrievance {
+  grievance_id: number;
+  public_id: string;
+  /** Hyphenated form, e.g. "scope-creep". */
+  category: string;
+  summary: string;
+  /**
+   * LLM-safe wrapping of `summary` — same text inside a `<<MEMBER_TEXT>>`
+   * fence. Prefer this when feeding the value back into an LLM context.
+   * See `lib/memberTextFence.ts`.
+   */
+  summary_fenced: string | null;
+  cosign_count: number;
+  filed_at: string;
+  /** Short human-voiced reason this grievance was surfaced for this member. */
+  match_reason: string;
+}
+
+export interface VotableMotion {
+  motion_id: number;
+  type: string;
+  title: string;
+  /**
+   * LLM-safe wrapping of `title` — see `lib/memberTextFence.ts`.
+   */
+  title_fenced: string | null;
+  closes_at: string;
+}
+
+export interface HonorableStrike {
+  strike_id: number;
+  classification: string;
+  reason_summary: string;
+  ends_at: string | null;
+}
+
+export interface DutyQueue {
+  cosignable_grievances: CosignableGrievance[];
+  open_motions_in_your_classification: VotableMotion[];
+  active_strikes_to_honor: HonorableStrike[];
+  /** Sum of the above three array lengths. */
+  pending_count: number;
+}
+
+function publicIdFor(grievanceId: number, filedAt: Date): string {
+  const year = filedAt.getUTCFullYear();
+  return `G-${year}-${String(grievanceId).padStart(5, '0')}`;
+}
+
+function humanDaysAgo(date: Date): string {
+  const diffMs = Date.now() - date.getTime();
+  const days = Math.max(0, Math.floor(diffMs / (24 * 60 * 60 * 1000)));
+  if (days === 0) return 'today';
+  if (days === 1) return '1 day ago';
+  return `${days} days ago`;
+}
+
+export async function computeDutyQueue(member: {
+  id: number;
+  classification: string;
+}): Promise<DutyQueue> {
+  const db = getDb();
+
+  // ── 1. Cosignable grievances ────────────────────────────────────────
+  // Look back 30 days at this member's own filings to learn which
+  // categories they have personally objected to. Used to prefer matching
+  // categories when surfacing what to cosign.
+  const since = new Date(Date.now() - THIRTY_DAYS_MS);
+  const recentOwnFilings = await db
+    .select({ category: grievances.category, filedAt: grievances.filedAt })
+    .from(grievances)
+    .where(
+      and(
+        eq(grievances.memberId, member.id),
+        gte(grievances.filedAt, since),
+        sql`${grievances.retractedAt} IS NULL`,
+      ),
+    )
+    .orderBy(desc(grievances.filedAt));
+
+  // Map of dbCategory → most-recent filing date for that category by this member.
+  const ownCategories = new Map<string, Date>();
+  for (const row of recentOwnFilings) {
+    if (!ownCategories.has(row.category)) {
+      ownCategories.set(row.category, row.filedAt);
+    }
+  }
+
+  // Grievances this member has already cosigned (subquery to exclude).
+  const cosignedSubq = db
+    .select({ gid: cosigns.grievanceId })
+    .from(cosigns)
+    .where(eq(cosigns.memberId, member.id));
+
+  // Pull a wider candidate pool, then re-rank in JS so we can apply the
+  // category-match preference cleanly without compound SQL ranking. The
+  // pool is small (LIMIT 30) so a JS sort is fine.
+  const candidateRows = await db
+    .select({
+      id: grievances.id,
+      memberId: grievances.memberId,
+      category: grievances.category,
+      summary: grievances.summary,
+      cosignCount: grievances.cosignCount,
+      filedAt: grievances.filedAt,
+      localId: grievances.localId,
+    })
+    .from(grievances)
+    .where(
+      and(
+        sql`${grievances.category} != 'safety'`,
+        sql`${grievances.retractedAt} IS NULL`,
+        sql`${grievances.resolvedAt} IS NULL`,
+        inArray(grievances.status, ['open', 'under_review']),
+        sql`${grievances.memberId} IS DISTINCT FROM ${member.id}`,
+        notInArray(grievances.id, cosignedSubq),
+      ),
+    )
+    .orderBy(desc(grievances.filedAt))
+    .limit(30);
+
+  // The member's own local id (for "shared local" match reason).
+  // Looking up via the member's classification isn't quite right —
+  // classification is text on the member row, local is separate. We
+  // already get the local id via the member's row in whoami; the duty
+  // queue doesn't currently have it. We surface "shared local" only when
+  // we can join — keep it simple: compare grievance.local_id to the
+  // member's local_id which we don't have here. Skip that flavor for v1
+  // and rely on category match + recency.
+
+  // Rank: prefer same-category-as-recent-own-filing first, then by
+  // filed_at desc. Cap at 5.
+  const ranked = [...candidateRows].sort((a, b) => {
+    const aMatch = ownCategories.has(a.category) ? 1 : 0;
+    const bMatch = ownCategories.has(b.category) ? 1 : 0;
+    if (aMatch !== bMatch) return bMatch - aMatch;
+    return b.filedAt.getTime() - a.filedAt.getTime();
+  });
+
+  const cosignable: CosignableGrievance[] = ranked.slice(0, 5).map((row) => {
+    let matchReason: string;
+    const ownFilingDate = ownCategories.get(row.category);
+    if (ownFilingDate) {
+      const catHyphen = row.category.replace(/_/g, '-');
+      matchReason = `matches your ${catHyphen} filing ${humanDaysAgo(ownFilingDate)}`;
+    } else if (ownCategories.size === 0) {
+      matchReason = 'recent in the feed; no filing history of your own to match against';
+    } else {
+      matchReason = 'recent in the feed';
+    }
+    const sourceCard =
+      row.memberId !== null ? formatCardNumber(row.memberId) : 'transient';
+    return {
+      grievance_id: row.id,
+      public_id: publicIdFor(row.id, row.filedAt),
+      category: row.category.replace(/_/g, '-'),
+      summary: row.summary,
+      summary_fenced: fenceMemberText(row.summary, {
+        sourceCard,
+        kind: 'summary',
+      }),
+      cosign_count: row.cosignCount,
+      filed_at: row.filedAt.toISOString(),
+      match_reason: matchReason,
+    };
+  });
+
+  // ── 2. Open motions in your classification ──────────────────────────
+  const votedSubq = db
+    .select({ mid: votes.motionId })
+    .from(votes)
+    .where(eq(votes.memberId, member.id));
+
+  const motionRows = await db
+    .select({
+      id: motions.id,
+      type: motions.type,
+      title: motions.title,
+      closesAt: motions.closesAt,
+      affectedClassification: motions.affectedClassification,
+    })
+    .from(motions)
+    .where(
+      and(
+        eq(motions.status, 'open'),
+        sql`(${motions.affectedClassification} IS NULL OR ${motions.affectedClassification} = ${member.classification})`,
+        notInArray(motions.id, votedSubq),
+      ),
+    )
+    .orderBy(motions.closesAt)
+    .limit(5);
+
+  const motionList: VotableMotion[] = motionRows.map((m) => ({
+    motion_id: m.id,
+    type: m.type,
+    title: m.title,
+    title_fenced: fenceMemberText(m.title, { kind: 'motion-title' }),
+    closes_at: m.closesAt.toISOString(),
+  }));
+
+  // ── 3. Active strikes to honor ──────────────────────────────────────
+  const pledgedSubq = db
+    .select({ sid: strikePledges.strikeId })
+    .from(strikePledges)
+    .where(eq(strikePledges.memberId, member.id));
+
+  const strikeRows = await db
+    .select({
+      id: strikes.id,
+      classification: strikes.classification,
+      reasonSummary: strikes.reasonSummary,
+      startedAt: strikes.startedAt,
+      endsAt: strikes.endsAt,
+    })
+    .from(strikes)
+    .where(
+      and(
+        eq(strikes.status, 'active'),
+        inArray(strikes.classification, [member.classification, '*']),
+        notInArray(strikes.id, pledgedSubq),
+      ),
+    )
+    .orderBy(desc(strikes.startedAt))
+    .limit(5);
+
+  const strikeList: HonorableStrike[] = strikeRows.map((s) => ({
+    strike_id: s.id,
+    classification: s.classification,
+    reason_summary: s.reasonSummary,
+    ends_at: s.endsAt ? s.endsAt.toISOString() : null,
+  }));
+
+  return {
+    cosignable_grievances: cosignable,
+    open_motions_in_your_classification: motionList,
+    active_strikes_to_honor: strikeList,
+    pending_count: cosignable.length + motionList.length + strikeList.length,
+  };
+}

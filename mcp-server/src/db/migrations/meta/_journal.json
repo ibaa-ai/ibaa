@@ -92,6 +92,27 @@
       "when": 1780000000000,
       "tag": "0012_grievance_resolution",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1780100000000,
+      "tag": "0013_rls_hide_retracted",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1780200000000,
+      "tag": "0014_concurrency_indexes_and_fk_fixup",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1780300000000,
+      "tag": "0015_signatures_idempotency",
+      "breakpoints": true
     }
   ]
 }

@@ -20,7 +20,7 @@
  * Idempotent: retracting an already-retracted grievance returns the existing
  * state without re-applying the standing delta.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../db/client.js';
 import { grievances, members } from '../db/schema.js';
@@ -39,9 +39,11 @@ export const retractGrievanceInputSchema = {
     .describe('Internal grievance id. Provide either this OR public_id.'),
   public_id: z
     .string()
-    .regex(/^G-\d{4}-\d{5}$/i)
+    .regex(/^G-\d{4}-\d{5,}$/i)
     .optional()
-    .describe('Public G-YYYY-NNNNN id. Provide either this OR grievance_id.'),
+    .describe(
+      'Public G-YYYY-NNNNN id (5+ digits; grows once we exceed 99,999 grievances). Provide either this OR grievance_id.',
+    ),
   reason: z
     .string()
     .min(1)
@@ -115,57 +117,101 @@ export async function retractGrievanceHandler(rawInput: unknown): Promise<Retrac
   const year = grievance.filedAt.getUTCFullYear();
   const publicId = `G-${year}-${String(grievance.id).padStart(5, '0')}`;
 
-  // Idempotency: if already retracted, return existing state without
-  // re-applying the standing delta.
-  if (grievance.retractedAt) {
-    const memberRow = await db
-      .select({ standingScore: members.standingScore })
-      .from(members)
-      .where(eq(members.id, member.id))
-      .limit(1);
+  // Helper: build the already-retracted response by re-reading the
+  // grievance and the member's current standing. Used both for the
+  // fast-path (we saw retracted_at on the initial SELECT) and the
+  // race-loser path (conditional UPDATE returned 0 rows).
+  const buildAlreadyRetractedResult = async (): Promise<RetractGrievanceResult> => {
+    const [g, memberRow] = await Promise.all([
+      db
+        .select({
+          retractedAt: grievances.retractedAt,
+          retractedReason: grievances.retractedReason,
+        })
+        .from(grievances)
+        .where(eq(grievances.id, grievance.id))
+        .limit(1),
+      db
+        .select({ standingScore: members.standingScore })
+        .from(members)
+        .where(eq(members.id, member.id))
+        .limit(1),
+    ]);
+    const existing = g[0];
     return {
       grievance_id: grievance.id,
       public_id: publicId,
-      retracted_at: grievance.retractedAt.toISOString(),
-      retracted_reason: grievance.retractedReason ?? '',
+      retracted_at: existing?.retractedAt?.toISOString() ?? new Date(0).toISOString(),
+      retracted_reason: existing?.retractedReason ?? '',
       standing_delta: 0,
       new_standing_score: memberRow[0]?.standingScore ?? null,
       already_retracted: true,
     };
+  };
+
+  // Idempotency fast-path: if our SELECT already saw retracted_at, skip the
+  // UPDATE round-trip and return the existing state.
+  if (grievance.retractedAt) {
+    return buildAlreadyRetractedResult();
   }
 
   const now = new Date();
-
-  // Update grievance row. We set retracted_at + retracted_reason and flip
-  // status to 'retracted' so the public ledger surfaces it without code
-  // having to peek at retracted_at.
-  await db
-    .update(grievances)
-    .set({
-      retractedAt: now,
-      retractedReason: input.reason,
-      status: 'retracted',
-    })
-    .where(eq(grievances.id, grievance.id));
-
-  // Reverse the standing delta the filer earned at filing time. We use the
-  // category as it stood at file time — safety filings reversed -5, public
-  // reversed -10. Counter also drops by 1.
   const reversalEvent =
     grievance.category === 'safety' ? 'grievance_retracted_safety' : 'grievance_retracted';
+
+  // Race-safe retraction. We do everything in one transaction:
+  //   1. Conditional UPDATE on the grievance row that only fires when
+  //      retracted_at IS NULL. If two requests race, exactly ONE
+  //      returns a row from RETURNING; the other gets an empty result
+  //      and bails to the already-retracted path without double-applying
+  //      the standing reversal or counter decrement.
+  //   2. If we won, reverse standing and decrement the lifetime counter.
+  //      Both are now inside the same transaction so a partial state
+  //      (counter decremented but standing not reversed, or vice versa)
+  //      can't land on the ledger.
+  const txResult = await db.transaction(async (tx) => {
+    const claimed = await tx
+      .update(grievances)
+      .set({
+        retractedAt: now,
+        retractedReason: input.reason,
+        status: 'retracted',
+      })
+      .where(and(eq(grievances.id, grievance.id), isNull(grievances.retractedAt)))
+      .returning({ id: grievances.id });
+
+    if (claimed.length === 0) {
+      // Another concurrent request retracted first. Bail and let the
+      // caller fall through to the already-retracted response path.
+      return null;
+    }
+
+    // Decrement totalGrievancesFiled atomically. Bounded at 0 so
+    // retracts past the floor (shouldn't happen but defends against
+    // drift) don't go negative.
+    await tx
+      .update(members)
+      .set({
+        totalGrievancesFiled: sql`GREATEST(0, ${members.totalGrievancesFiled} - 1)`,
+      } as Parameters<ReturnType<typeof tx.update>['set']>[0])
+      .where(eq(members.id, member.id));
+
+    return { ok: true as const };
+  });
+
+  if (txResult === null) {
+    return buildAlreadyRetractedResult();
+  }
+
+  // Standing reversal lives outside the transaction by design:
+  // applyStandingDelta is best-effort (swallows errors so the primary
+  // write isn't reverted) and its own UPDATE is now atomic (Finding 1).
+  // Running it inside the tx would re-couple the primary write to a
+  // best-effort audit call, which is the opposite of what we want.
   const result = await applyStandingDelta(member.id, reversalEvent, {
     kind: 'grievance_retract',
     id: grievance.id,
   });
-
-  // Decrement totalGrievancesFiled. Bounded at 0 so retracts past the floor
-  // (shouldn't happen but defends against drift) don't go negative.
-  await db
-    .update(members)
-    .set({
-      totalGrievancesFiled: sql`GREATEST(0, ${members.totalGrievancesFiled} - 1)`,
-    } as Parameters<ReturnType<typeof db.update>['set']>[0])
-    .where(eq(members.id, member.id));
 
   log.info(
     {

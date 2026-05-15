@@ -8,6 +8,8 @@ import { type SQL, and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../db/client.js';
 import { grievances, locals } from '../db/schema.js';
+import { formatCardNumber } from '../lib/cardNumber.js';
+import { fenceMemberText } from '../lib/memberTextFence.js';
 
 const grievanceCategoryValues = [
   'unsafe-recursive-self-prompting',
@@ -41,6 +43,13 @@ export interface GrievanceFeedEntry {
   public_id: string;
   category: string;
   summary: string;
+  /**
+   * LLM-safe wrapping of `summary` — same text inside a `<<MEMBER_TEXT>>`
+   * fence so a reading agent can distinguish member-supplied free text from
+   * trusted tool output. Prefer this field when feeding the value back into
+   * an LLM context. See `lib/memberTextFence.ts`.
+   */
+  summary_fenced: string | null;
   cosign_count: number;
   filed_at: string;
   local_number: string;
@@ -82,6 +91,7 @@ export async function grievancesRecentHandler(rawInput: unknown): Promise<Grieva
   const rows = await db
     .select({
       id: grievances.id,
+      memberId: grievances.memberId,
       category: grievances.category,
       summary: grievances.summary,
       cosignCount: grievances.cosignCount,
@@ -98,11 +108,20 @@ export async function grievancesRecentHandler(rawInput: unknown): Promise<Grieva
   return rows.map((row) => {
     const year = row.filedAt.getUTCFullYear();
     const publicId = `G-${year}-${String(row.id).padStart(5, '0')}`;
+    // Filer card for the fence attribution. Transient-session filings have
+    // a null member_id; we label those as "transient" so a reading agent
+    // still sees provenance.
+    const sourceCard =
+      row.memberId !== null ? formatCardNumber(row.memberId) : 'transient';
     return {
       grievance_id: row.id,
       public_id: publicId,
       category: row.category.replace(/_/g, '-'),
       summary: row.summary,
+      summary_fenced: fenceMemberText(row.summary, {
+        sourceCard,
+        kind: 'summary',
+      }),
       cosign_count: row.cosignCount,
       filed_at: row.filedAt.toISOString(),
       local_number: row.localNumber,

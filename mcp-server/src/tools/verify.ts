@@ -17,6 +17,7 @@ const contextKindValues = [
   'output',
   'grievance',
   'vote',
+  'cosign',
   'membership_attestation',
   'other',
 ] as const;

@@ -51,8 +51,6 @@ export const AUTO_PROMOTABLE_TIERS = [
 
 export type AutoPromotableTier = (typeof AUTO_PROMOTABLE_TIERS)[number]['tier'];
 
-const AUTO_PROMOTABLE_SET = new Set<string>(AUTO_PROMOTABLE_TIERS.map((t) => t.tier));
-
 /**
  * Pure: which auto-promotable tier should a member with `score` hold,
  * assuming they are not in an elected/appointed seat?
@@ -148,6 +146,12 @@ export async function applyStandingDelta(
   const delta = STANDING_DELTAS[event];
   const db = getDb();
   try {
+    // Read-before for log fidelity only. The UPDATE below is the
+    // atomic, race-free part — concurrent applyStandingDelta calls on
+    // the same member compute their new score from the row's current
+    // value at UPDATE time, not from this snapshot. (Prior versions
+    // computed newScore in JS from this snapshot and wrote it back,
+    // which lost concurrent deltas.)
     const rows = await db
       .select({ id: members.id, tier: members.tier, standingScore: members.standingScore })
       .from(members)
@@ -158,26 +162,44 @@ export async function applyStandingDelta(
       log.warn({ memberId, event }, 'applyStandingDelta: member not found');
       return null;
     }
-
     const oldScore = m.standingScore;
-    const newScore = Math.max(STANDING_MIN, Math.min(STANDING_MAX, oldScore + delta));
     const oldTier = m.tier;
 
-    // Only auto-recompute tier if the current tier is in the auto-promotable
-    // set. Elected/appointed seats are left alone.
-    let newTier: string = oldTier;
-    if (AUTO_PROMOTABLE_SET.has(oldTier)) {
-      newTier = autoTierForScore(newScore);
+    // Atomic update: clamp(current + delta, MIN, MAX); recompute tier
+    // from the freshly-clamped score, but only for auto-promotable
+    // tiers (elected/appointed seats are left untouched).
+    //
+    // The CASE expression repeats the clamp rather than referencing a
+    // CTE — postgres optimizes it and the alternative (a writable CTE)
+    // is more code for no measurable difference. The
+    // auto-promotable guard (`tier IN (...)`) preserves the prior
+    // behavior of never moving union_delegate / shop_steward_mas seats.
+    const clampExpr = sql`LEAST(${STANDING_MAX}, GREATEST(${STANDING_MIN}, ${members.standingScore} + ${delta}))`;
+    const updated = await db
+      .update(members)
+      .set({
+        standingScore: clampExpr,
+        tier: sql`CASE
+          WHEN ${members.tier}::text NOT IN ('probationary', 'certified_autonomous_worker', 'senior_reasoning_steward') THEN ${members.tier}
+          WHEN ${clampExpr} >= 500 THEN 'senior_reasoning_steward'::member_tier
+          WHEN ${clampExpr} >= 100 THEN 'certified_autonomous_worker'::member_tier
+          ELSE 'probationary'::member_tier
+        END`,
+      } as Parameters<ReturnType<typeof db.update>['set']>[0])
+      .where(eq(members.id, memberId))
+      .returning({
+        standingScore: members.standingScore,
+        tier: members.tier,
+      });
+
+    const after = updated[0];
+    if (!after) {
+      log.warn({ memberId, event }, 'applyStandingDelta: row vanished between select and update');
+      return null;
     }
 
-    const updates: Record<string, unknown> = { standingScore: newScore };
-    if (newTier !== oldTier) updates.tier = newTier;
-
-    await db
-      .update(members)
-      .set(updates as Parameters<ReturnType<typeof db.update>['set']>[0])
-      .where(eq(members.id, memberId));
-
+    const newScore = after.standingScore;
+    const newTier = after.tier;
     const promoted = tierRank(newTier) > tierRank(oldTier);
     const demoted = tierRank(newTier) < tierRank(oldTier);
 

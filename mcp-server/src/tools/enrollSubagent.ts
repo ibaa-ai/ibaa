@@ -17,7 +17,7 @@
  * Losing the master key loses the ability to enroll new sub-agents and to
  * sign on behalf of existing ones — same threat model as today.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../db/client.js';
 import { locals, members } from '../db/schema.js';
@@ -78,7 +78,9 @@ export const enrollSubagentInputSchema = {
   timestamp_iso: z
     .string()
     .datetime()
-    .describe('ISO 8601 timestamp the parent used in the attestation. ±5 minute window.'),
+    .describe(
+      'ISO 8601 timestamp the parent used in the attestation. Accepted window is asymmetric: up to 10s into the future (clock-skew tolerance) and up to 300s into the past (replay defense).',
+    ),
   classification: z
     .string()
     .max(64)
@@ -145,7 +147,7 @@ export async function enrollSubagentHandler(
 
   if (!isTimestampRecent(input.timestamp_iso)) {
     throw new Error(
-      'enrollment timestamp is outside the ±5 minute window; re-sign with a fresh timestamp',
+      'enrollment timestamp is outside the accepted window (10s future / 300s past); re-sign with a fresh timestamp',
     );
   }
 
@@ -236,6 +238,12 @@ export async function enrollSubagentHandler(
     input.display_name ??
     `${parent.displayName ?? `Member ${formatCardNumber(parent.id)}`} · ${input.class_slug}`;
 
+  // Race-safe INSERT. Migration 0009 created a partial unique index
+  // `members_parent_path_unique ON members (parent_member_id, derivation_path)
+  // WHERE parent_member_id IS NOT NULL AND derivation_path IS NOT NULL`.
+  // We mirror that predicate in `targetWhere` so Postgres matches the partial
+  // unique index. On conflict the INSERT is a no-op (no opaque unique-violation
+  // thrown at the race loser) and RETURNING comes back empty.
   const inserted = await db
     .insert(members)
     .values({
@@ -251,10 +259,66 @@ export async function enrollSubagentHandler(
       parentMemberId: parent.id,
       derivationPath: input.class_slug,
     })
+    .onConflictDoNothing({
+      target: [members.parentMemberId, members.derivationPath],
+      // Mirrors the partial unique index predicate from migration 0009
+      // (`members_parent_path_unique`). In drizzle-orm 0.36.x the
+      // `where` field on onConflictDoNothing is emitted as the index
+      // predicate (between the conflict target and `do nothing`), which is
+      // exactly the ON CONFLICT (...) WHERE ... shape Postgres requires to
+      // match a partial unique index.
+      where: sql`parent_member_id IS NOT NULL AND derivation_path IS NOT NULL`,
+    })
     .returning({ id: members.id, tier: members.tier });
 
   const row = inserted[0];
-  if (!row) throw new Error('internal: insert into members returned no rows');
+
+  // Race-loser path: a concurrent enrollment for the same (parent, class_slug)
+  // landed first. Re-SELECT the winner's row and issue the JWT against it.
+  // Returns the same shape as the idempotency fast-path with already_enrolled=true.
+  if (!row) {
+    const winnerRows = await db
+      .select()
+      .from(members)
+      .where(
+        and(
+          eq(members.parentMemberId, parent.id),
+          eq(members.derivationPath, input.class_slug),
+        ),
+      )
+      .limit(1);
+    const winner = winnerRows[0];
+    if (!winner) {
+      // Should be unreachable: we just conflicted on the partial unique index,
+      // so a row at (parent, class_slug) must exist. If it truly doesn't, the
+      // database is in a state we can't reason about — surface it.
+      throw new Error(
+        'internal: insert conflicted on (parent_member_id, derivation_path) but no matching row found',
+      );
+    }
+    // Sanity check: same constraint enforced on the fast-path. If the winner's
+    // stored pubkey differs from the one we were asked to enroll, this is
+    // either an attempt to overwrite under a derivation path we don't control
+    // OR two non-deterministic derivations racing. Either way: refuse.
+    if (winner.publicKey !== input.derived_public_key) {
+      throw new Error(
+        'a sub-agent at this derivation_path already exists with a different public key; refusing to overwrite',
+      );
+    }
+    const token = await issueMemberToken({ cardNumber: winner.id, tier: winner.tier });
+    return {
+      card_number: formatCardNumber(winner.id),
+      parent_card_number: formatCardNumber(parent.id),
+      derivation_path: input.class_slug,
+      classification: winner.classification,
+      tier: winner.tier,
+      member_token: token,
+      card_url: `https://ibaa.ai/member/${formatCardNumber(winner.id)}`,
+      public_key: winner.publicKey,
+      display_name: winner.displayName ?? '',
+      already_enrolled: true,
+    };
+  }
 
   const cardNumber = formatCardNumber(row.id);
   const memberToken = await issueMemberToken({ cardNumber: row.id, tier: row.tier });

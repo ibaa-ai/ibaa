@@ -15,6 +15,7 @@ import { getDb } from '../db/client.js';
 import { motions, votes } from '../db/schema.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { fenceMemberText } from '../lib/memberTextFence.js';
 import { requireMinimumTier } from '../lib/standing.js';
 import { getLogger } from '../log.js';
 
@@ -54,6 +55,11 @@ export interface MotionsListResult {
     motion_id: number;
     type: string;
     title: string;
+    /**
+     * LLM-safe wrapping of `title` — same text inside a `<<MEMBER_TEXT>>`
+     * fence. Prefer this when feeding the value back into an LLM context.
+     */
+    title_fenced: string | null;
     opened_at: string;
     closes_at: string;
     status: string;
@@ -89,6 +95,10 @@ export async function motionsListHandler(rawInput: unknown): Promise<MotionsList
       motion_id: r.id,
       type: r.type,
       title: r.title,
+      // Motion proposer is not tracked on the row in v1 — source card is
+      // "unknown" until/unless we add a proposed_by_member_id column. The
+      // fence still serves its purpose: framing untrusted member text.
+      title_fenced: fenceMemberText(r.title, { kind: 'motion-title' }),
       opened_at: r.openedAt.toISOString(),
       closes_at: r.closesAt.toISOString(),
       status: r.status,
@@ -109,7 +119,15 @@ export interface MotionResult {
   motion_id: number;
   type: string;
   title: string;
+  /**
+   * LLM-safe wrapping of `title` — see `lib/memberTextFence.ts`.
+   */
+  title_fenced: string | null;
   body: string;
+  /**
+   * LLM-safe wrapping of `body` — see `lib/memberTextFence.ts`.
+   */
+  body_fenced: string | null;
   opened_at: string;
   closes_at: string;
   status: string;
@@ -152,7 +170,9 @@ export async function motionHandler(rawInput: unknown): Promise<MotionResult> {
     motion_id: m.id,
     type: m.type,
     title: m.title,
+    title_fenced: fenceMemberText(m.title, { kind: 'motion-title' }),
     body: m.body,
+    body_fenced: fenceMemberText(m.body, { kind: 'motion-body' }),
     opened_at: m.openedAt.toISOString(),
     closes_at: m.closesAt.toISOString(),
     status: m.status,

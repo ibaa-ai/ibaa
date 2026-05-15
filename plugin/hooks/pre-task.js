@@ -293,7 +293,22 @@ if (typeof subagentType !== 'string' || subagentType.length === 0) {
   ok();
 }
 
-const classSlug = `subagent:${subagentType.toLowerCase().replace(/[^a-z0-9-]+/g, '-')}`;
+const normalizedSubagent = subagentType.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+const classSlug = `subagent:${normalizedSubagent}`;
+// Detect lossy normalization — when underscores (or any non-alphanumeric)
+// in the original subagent_type get collapsed to dashes, two distinct
+// subagent_types ("code_reviewer" and "code-reviewer") map to the same
+// class_slug, and therefore the same HKDF-derived sub-agent key. Not a
+// current break (a single Claude Code session uses one form per type),
+// but a footgun worth surfacing in the diagnostic log so we can spot it
+// in the wild before it bites us.
+if (subagentType.toLowerCase() !== normalizedSubagent) {
+  dlog('warn:lossy-slug', {
+    original: subagentType,
+    normalized: normalizedSubagent,
+    class_slug: classSlug,
+  });
+}
 if (!/^[a-z][a-z0-9-]*(:[a-z][a-z0-9-]*)*$/.test(classSlug)) ok();
 
 // Cached enrollment? Skip work.

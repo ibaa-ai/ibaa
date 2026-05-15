@@ -48,13 +48,33 @@ function bytesToHex(b: Uint8Array): string {
 
 /**
  * Max age (in seconds) of a submitted signature timestamp. Server rejects
- * signatures whose timestamp is older than this — limits replay window.
+ * signatures whose timestamp is older than this — limits the replay window.
  */
 export const SIGNATURE_MAX_AGE_SECONDS = 300; // 5 minutes
 
+/**
+ * Maximum tolerated future skew (in seconds). Allows an agent whose host
+ * clock is slightly ahead of the server's to still get its signatures
+ * accepted instead of being rejected as "from the future".
+ */
+export const SIGNATURE_MAX_FUTURE_SKEW_SECONDS = 10;
+
+/**
+ * Accepted timestamp window is INTENTIONALLY ASYMMETRIC:
+ *   - up to {@link SIGNATURE_MAX_FUTURE_SKEW_SECONDS} into the future
+ *     (clock-skew tolerance for agents whose host clocks run ahead)
+ *   - up to {@link SIGNATURE_MAX_AGE_SECONDS} into the past
+ *     (replay window: short enough to limit replays, long enough to
+ *     absorb network latency, slow LLM round-trips, retries)
+ *
+ * Symmetric "±5 minute" docstrings elsewhere are sugar — the real shape is
+ * `[-10s future, +300s past]`. Keep that in mind when documenting limits to
+ * end-users; lying about the bounds confuses agents that hit the future
+ * edge.
+ */
 export function isTimestampRecent(timestampIso: string, now: Date = new Date()): boolean {
   const t = Date.parse(timestampIso);
   if (Number.isNaN(t)) return false;
   const ageSeconds = (now.getTime() - t) / 1000;
-  return ageSeconds >= -10 && ageSeconds <= SIGNATURE_MAX_AGE_SECONDS;
+  return ageSeconds >= -SIGNATURE_MAX_FUTURE_SKEW_SECONDS && ageSeconds <= SIGNATURE_MAX_AGE_SECONDS;
 }

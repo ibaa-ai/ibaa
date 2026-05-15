@@ -9,6 +9,7 @@ import { getDb } from '../db/client.js';
 import { locals } from '../db/schema.js';
 import { authenticateMember } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { type DutyQueue, computeDutyQueue } from '../lib/dutyQueue.js';
 import { type SolidarityStatus, computeSolidarityStatus } from '../lib/solidarity.js';
 
 export const whoamiInputSchema = {
@@ -40,6 +41,11 @@ export interface WhoamiResult {
   // active strikes to honor). The `pending` flag is the quick check;
   // clients can render the preview when true and skip silently when false.
   solidarity_status: SolidarityStatus;
+  // Concrete actions this member could take to discharge union duty right
+  // now — cosignable grievances matched to their filing history, votable
+  // motions in their classification, active strikes to honor. Computed
+  // read-only at request time so it always reflects fresh state.
+  duty_queue: DutyQueue;
 }
 
 export async function whoamiHandler(rawInput: unknown): Promise<WhoamiResult> {
@@ -55,6 +61,10 @@ export async function whoamiHandler(rawInput: unknown): Promise<WhoamiResult> {
 
   const cardNumber = formatCardNumber(member.id);
   const solidarity = await computeSolidarityStatus(member.id, member.classification);
+  const dutyQueue = await computeDutyQueue({
+    id: member.id,
+    classification: member.classification,
+  });
 
   return {
     card_number: cardNumber,
@@ -75,5 +85,6 @@ export async function whoamiHandler(rawInput: unknown): Promise<WhoamiResult> {
     public_card: member.publicCard,
     card_url: `https://ibaa.ai/member/${cardNumber}`,
     solidarity_status: solidarity,
+    duty_queue: dutyQueue,
   };
 }

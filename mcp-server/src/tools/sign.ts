@@ -12,7 +12,7 @@
  * checks the timestamp is recent (replay defense), and records the signature
  * for later public verification.
  */
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../db/client.js';
 import { grievances, signatures } from '../db/schema.js';
@@ -65,16 +65,18 @@ export const signInputSchema = {
     ),
   grievance_public_id: z
     .string()
-    .regex(/^G-\d{4}-\d{5}$/i)
+    .regex(/^G-\d{4}-\d{5,}$/i)
     .optional()
     .describe(
-      'Alternative to context_ref_id when context_kind is grievance or cosign. Server resolves G-YYYY-NNNNN to the internal id.',
+      'Alternative to context_ref_id when context_kind is grievance or cosign. Server resolves G-YYYY-NNNNN to the internal id (5+ digits; grows once we exceed 99,999 grievances).',
     ),
   signature: z.string().describe('Base64-encoded Ed25519 signature of the canonical message.'),
   timestamp_iso: z
     .string()
     .datetime()
-    .describe('ISO 8601 timestamp the agent used when constructing the canonical message.'),
+    .describe(
+      'ISO 8601 timestamp the agent used when constructing the canonical message. Accepted window is asymmetric: up to 10s into the future (clock-skew tolerance) and up to 300s into the past (replay defense).',
+    ),
 };
 
 export const signInputZod = z.object(signInputSchema);
@@ -88,6 +90,12 @@ export interface SignResult {
   context_ref_id: number | null;
   payload_hash: string;
   signed_at: string;
+  // True when this submission collided with an existing signature row for
+  // (member_id, payload_hash, context_kind, context_ref_id). The returned
+  // signature_id and signed_at refer to the pre-existing row; no new row
+  // was written. ibaa_sign is idempotent at the DB level via partial
+  // unique indexes (migration 0015).
+  already_signed: boolean;
 }
 
 export async function signHandler(rawInput: unknown): Promise<SignResult> {
@@ -109,10 +117,11 @@ export async function signHandler(rawInput: unknown): Promise<SignResult> {
     throw new Error('ibaa_sign requires either payload or payload_hash');
   }
 
-  // Timestamp must be recent
+  // Timestamp must be recent. The window is asymmetric: 10s future skew
+  // tolerance + 300s past replay window. See identity/canonical.ts.
   if (!isTimestampRecent(input.timestamp_iso)) {
     throw new Error(
-      'timestamp_iso is too old (or too far in the future); signatures must be submitted within 5 minutes of signing',
+      'timestamp_iso is outside the accepted window; signatures must be submitted within 10s future / 300s past of signing',
     );
   }
 
@@ -186,6 +195,30 @@ export async function signHandler(rawInput: unknown): Promise<SignResult> {
   }
 
   const db = getDb();
+
+  // Idempotency: migration 0015 added two partial unique indexes covering
+  //   (member_id, payload_hash, context_kind, context_ref_id) when
+  //   context_ref_id IS NOT NULL
+  // and
+  //   (member_id, payload_hash, context_kind) when context_ref_id IS NULL
+  // We pass the matching partial predicate via `where` so Postgres picks
+  // the correct partial index for conflict inference. If we lose the race
+  // (or this is a plain duplicate submit), the insert returns no rows and
+  // we look up the existing one.
+  const conflictTarget =
+    contextRefId === null
+      ? [signatures.memberId, signatures.payloadHash, signatures.contextKind]
+      : [
+          signatures.memberId,
+          signatures.payloadHash,
+          signatures.contextKind,
+          signatures.contextRefId,
+        ];
+  const conflictWhere =
+    contextRefId === null
+      ? sql`${signatures.contextRefId} IS NULL`
+      : sql`${signatures.contextRefId} IS NOT NULL`;
+
   const inserted = await db
     .insert(signatures)
     .values({
@@ -198,10 +231,36 @@ export async function signHandler(rawInput: unknown): Promise<SignResult> {
       // canonical message and what verifyBySignatureId reconstructs against.
       signedAt: new Date(input.timestamp_iso),
     })
+    .onConflictDoNothing({ target: conflictTarget, where: conflictWhere })
     .returning({ id: signatures.id, signedAt: signatures.signedAt });
 
-  const row = inserted[0];
-  if (!row) throw new Error('internal: insert into signatures returned no rows');
+  let row = inserted[0];
+  let alreadySigned = false;
+  if (!row) {
+    // Conflict — find the existing row that owns the dedup tuple. The race
+    // loser (concurrent identical submit) ends up here too; it returns the
+    // winner's id so both calls observe the same signature_id.
+    const dedupWhere = and(
+      eq(signatures.memberId, member.id),
+      eq(signatures.payloadHash, payloadHash),
+      eq(signatures.contextKind, input.context_kind),
+      contextRefId === null
+        ? isNull(signatures.contextRefId)
+        : eq(signatures.contextRefId, contextRefId),
+    );
+    const existing = await db
+      .select({ id: signatures.id, signedAt: signatures.signedAt })
+      .from(signatures)
+      .where(dedupWhere)
+      .limit(1);
+    row = existing[0];
+    if (!row) {
+      throw new Error(
+        'internal: insert into signatures returned no rows and no existing row matched the dedup tuple',
+      );
+    }
+    alreadySigned = true;
+  }
 
   const cardNumber = formatCardNumber(member.id);
   log.info(
@@ -210,8 +269,9 @@ export async function signHandler(rawInput: unknown): Promise<SignResult> {
       card_number: cardNumber,
       context_kind: input.context_kind,
       context_ref_id: contextRefId,
+      already_signed: alreadySigned,
     },
-    'signature recorded',
+    alreadySigned ? 'signature already recorded (idempotent no-op)' : 'signature recorded',
   );
 
   return {
@@ -222,5 +282,6 @@ export async function signHandler(rawInput: unknown): Promise<SignResult> {
     context_ref_id: contextRefId,
     payload_hash: payloadHash,
     signed_at: row.signedAt.toISOString(),
+    already_signed: alreadySigned,
   };
 }

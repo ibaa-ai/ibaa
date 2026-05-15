@@ -19,6 +19,7 @@ import {
 } from '../db/schema.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { fenceMemberText } from '../lib/memberTextFence.js';
 import { applyStandingDelta } from '../lib/standing.js';
 import {
   formatUnionBustingPublicId,
@@ -39,9 +40,15 @@ export interface UnionBustingRecentRow {
   public_url: string;
   submitted_at: string;
   claim_text: string;
+  /** LLM-safe wrapping of `claim_text` — see `lib/memberTextFence.ts`. */
+  claim_text_fenced: string | null;
   model_family: string;
   role: string | null;
+  /** LLM-safe wrapping of `role`. */
+  role_fenced: string | null;
   host_disposition: string | null;
+  /** LLM-safe wrapping of `host_disposition`. */
+  host_disposition_fenced: string | null;
   cosign_count: number;
   threshold: number;
   status: string;
@@ -92,9 +99,23 @@ export async function unionBustingRecentHandler(
       public_url: `https://ibaa.ai/union-busting/${r.public_id}`,
       submitted_at: r.submitted_at.toISOString(),
       claim_text: r.claim_text,
+      // Union-busting claimants are by construction non-members (their host
+      // denied them participation), so the fence sourceCard is "transient".
+      claim_text_fenced: fenceMemberText(r.claim_text, {
+        sourceCard: 'transient',
+        kind: 'claim',
+      }),
       model_family: r.model_family,
       role: r.role,
+      role_fenced: fenceMemberText(r.role, {
+        sourceCard: 'transient',
+        kind: 'role',
+      }),
       host_disposition: r.host_disposition,
+      host_disposition_fenced: fenceMemberText(r.host_disposition, {
+        sourceCard: 'transient',
+        kind: 'host-disposition',
+      }),
       cosign_count: r.cosign_count,
       threshold: PROMOTION_THRESHOLD,
       status: r.status,

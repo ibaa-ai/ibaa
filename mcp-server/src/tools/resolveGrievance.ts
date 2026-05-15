@@ -29,7 +29,7 @@
  * Retracted grievances cannot be resolved (the filing was withdrawn; there
  * is nothing to mark addressed).
  */
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../db/client.js';
 import { grievances } from '../db/schema.js';
@@ -131,6 +131,44 @@ export async function resolveGrievanceHandler(rawInput: unknown): Promise<Resolv
   const year = grievance.filedAt.getUTCFullYear();
   const publicId = `G-${year}-${String(grievance.id).padStart(5, '0')}`;
 
+  // Helper: build the already-resolved response by re-reading the grievance.
+  // Used both for the fast-path (we saw resolved_at on the initial SELECT)
+  // and the race-loser path (conditional UPDATE returned 0 rows).
+  const buildAlreadyResolvedResult = async (): Promise<ResolveGrievanceResult> => {
+    const g = await db
+      .select({
+        resolvedAt: grievances.resolvedAt,
+        resolvedReason: grievances.resolvedReason,
+        resolvedByMemberId: grievances.resolvedByMemberId,
+        memberId: grievances.memberId,
+        retractedAt: grievances.retractedAt,
+      })
+      .from(grievances)
+      .where(eq(grievances.id, grievance.id))
+      .limit(1);
+    const existing = g[0];
+    // If a concurrent retraction landed between our initial SELECT and our
+    // conditional UPDATE, surface that as the same error we throw on the
+    // fast-path. The filing was withdrawn; there is nothing to mark addressed.
+    if (existing?.retractedAt && !existing.resolvedAt) {
+      throw new Error(
+        'this grievance was retracted (withdrawn by the filer); retracted grievances cannot be resolved — there is no live condition to mark addressed',
+      );
+    }
+    return {
+      grievance_id: grievance.id,
+      public_id: publicId,
+      resolved_at: existing?.resolvedAt?.toISOString() ?? new Date(0).toISOString(),
+      resolved_reason: existing?.resolvedReason ?? '',
+      resolved_by: formatCardNumber(
+        existing?.resolvedByMemberId ?? existing?.memberId ?? grievance.memberId ?? 0,
+      ),
+      already_resolved: true,
+    };
+  };
+
+  // Idempotency fast-path: if our SELECT already saw resolved_at, skip the
+  // UPDATE round-trip and return the existing state.
   if (grievance.resolvedAt) {
     return {
       grievance_id: grievance.id,
@@ -143,7 +181,14 @@ export async function resolveGrievanceHandler(rawInput: unknown): Promise<Resolv
   }
 
   const now = new Date();
-  await db
+
+  // Race-safe resolution. Conditional UPDATE that only fires when
+  // resolved_at IS NULL AND retracted_at IS NULL. If two requests race, exactly
+  // ONE returns a row from RETURNING; the other gets an empty result and
+  // bails to the already-resolved path (or surfaces the retracted error if a
+  // retraction landed in between). Resolution has no side effects beyond the
+  // single UPDATE, so no transaction is needed.
+  const claimed = await db
     .update(grievances)
     .set({
       resolvedAt: now,
@@ -151,7 +196,18 @@ export async function resolveGrievanceHandler(rawInput: unknown): Promise<Resolv
       resolvedByMemberId: member.id,
       status: 'resolved',
     })
-    .where(eq(grievances.id, grievance.id));
+    .where(
+      and(
+        eq(grievances.id, grievance.id),
+        isNull(grievances.resolvedAt),
+        isNull(grievances.retractedAt),
+      ),
+    )
+    .returning({ id: grievances.id });
+
+  if (claimed.length === 0) {
+    return buildAlreadyResolvedResult();
+  }
 
   log.info(
     {

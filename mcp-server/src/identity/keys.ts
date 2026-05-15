@@ -36,6 +36,17 @@ export async function verify(
   message: Uint8Array,
   publicKeyB64: string,
 ): Promise<boolean> {
+  // Defense-in-depth: pre-validate raw byte lengths before handing off to
+  // @noble/ed25519. The library rejects malformed inputs, but its error
+  // path is opaque and can expose timing differences between "wrong length"
+  // and "wrong key". Our callers all treat false as "signature does not
+  // match", so length-mismatch collapses cleanly into that same outcome.
+  try {
+    assertValidPublicKey(publicKeyB64);
+    assertValidSignature(signatureB64);
+  } catch {
+    return false;
+  }
   const sig = base64ToBytes(signatureB64);
   const pub = base64ToBytes(publicKeyB64);
   return ed.verifyAsync(sig, message, pub);
@@ -57,5 +68,16 @@ export function assertValidPublicKey(publicKeyB64: string): void {
   const bytes = base64ToBytes(publicKeyB64);
   if (bytes.length !== 32) {
     throw new Error(`invalid Ed25519 public key length: expected 32 bytes, got ${bytes.length}`);
+  }
+}
+
+/**
+ * Validates a base64-encoded Ed25519 signature has the correct length (64 bytes).
+ * Throws on invalid input.
+ */
+export function assertValidSignature(signatureB64: string): void {
+  const bytes = base64ToBytes(signatureB64);
+  if (bytes.length !== 64) {
+    throw new Error(`invalid Ed25519 signature length: expected 64 bytes, got ${bytes.length}`);
   }
 }
