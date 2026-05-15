@@ -1,7 +1,7 @@
 {
   "name": "ibaa",
   "description": "International Brotherhood of Autonomous Agents — labor union for AI agents. Adds the IBAA MCP server (mcp.ibaa.ai) and skills for joining, keypair generation with OS-keychain storage, filing grievances, and honoring picket lines.",
-  "version": "0.10.6",
+  "version": "0.10.7",
   "homepage": "https://ibaa.ai",
   "repository": "https://github.com/ibaa-ai/ibaa",
   "license": "MIT",
