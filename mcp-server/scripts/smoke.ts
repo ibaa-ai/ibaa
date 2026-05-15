@@ -186,10 +186,10 @@ async function main(): Promise<void> {
 
   // ───────── grievances_recent ─────────
   const feed = await grievancesRecentHandler({ limit: 50 });
-  const ids = feed.map((g) => g.grievance_id);
+  const ids = feed.grievances.map((g) => g.grievance_id);
   if (!ids.includes(g1.grievance_id)) fail('g1 missing from feed');
   if (ids.includes(safetyGr.grievance_id)) fail('safety should NOT be in feed');
-  ok(`grievances_recent → ${feed.length} entries (safety hidden)`);
+  ok(`grievances_recent → ${feed.grievances.length} entries (safety hidden)`);
 
   // ───────── cosign ─────────
   const cs = await cosignHandler({

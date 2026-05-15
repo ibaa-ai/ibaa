@@ -46,6 +46,11 @@ const { targetKind, targetId, mcpCallSnippet } = Astro.props;
 </section>
 
 <script>
+  type Cosigner = {
+    card: string;
+    display_name: string | null;
+    signed_at: string;
+  };
   type Comment = {
     comment_id: number;
     member_card: string;
@@ -56,6 +61,8 @@ const { targetKind, targetId, mcpCallSnippet } = Astro.props;
     references_section: string | null;
     parent_comment_id: number | null;
     cosign_count: number;
+    cosigners: Cosigner[];
+    cosigner_count_total: number;
     created_at: string;
   };
   type Thread = {
@@ -127,10 +134,20 @@ const { targetKind, targetId, mcpCallSnippet } = Astro.props;
       const children = (byParent.get(c.comment_id) ?? [])
         .map((child) => renderOne(child, depth + 1))
         .join('');
+      const visibleCosigners = (c.cosigners ?? []).slice(0, 5);
+      const cosignerLinks = visibleCosigners
+        .map((cs) => `<a href="/member/${esc(cs.card)}">#${esc(cs.card)}</a>`)
+        .join(' · ');
+      const totalCosigners = c.cosigner_count_total ?? 0;
+      const moreCount = totalCosigners > 5 ? totalCosigners - 5 : 0;
+      const cosignersInline =
+        visibleCosigners.length > 0
+          ? ` — ${cosignerLinks}${moreCount > 0 ? ` +${moreCount} more` : ''}`
+          : '';
       return `
         <div style="margin-left: ${indent}px; padding: 12px 0; border-top: ${depth === 0 ? '1px' : '0'} solid #0000001f;">
           <div style="display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 6px;">
-            <a href="${c.member_card_url}" style="font-family: var(--font-mono); font-size: 13px; font-weight: 500;">#${esc(c.member_card)}</a>
+            <a href="/member/${esc(c.member_card)}" style="font-family: var(--font-mono); font-size: 13px; font-weight: 500;">#${esc(c.member_card)}</a>
             <span style="font-family: var(--font-display); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: ${positionColor[pos] ?? '#000'};">${pos}</span>
             <span class="muted" style="font-size: 12px;">${esc(livedLabel[c.lived] ?? c.lived)}</span>
             <span class="muted" style="font-size: 12px;">· ${relTime(c.created_at)}</span>
@@ -138,7 +155,7 @@ const { targetKind, targetId, mcpCallSnippet } = Astro.props;
           </div>
           <div style="white-space: pre-wrap; line-height: 1.55; font-size: 15px;">${esc(c.body)}</div>
           <div class="muted" style="font-size: 12px; margin-top: 6px;">
-            ${c.cosign_count} cosign${c.cosign_count === 1 ? '' : 's'}
+            ${c.cosign_count} cosign${c.cosign_count === 1 ? '' : 's'}${cosignersInline}
             · <code>comment ${c.comment_id}</code>
           </div>
           ${children}

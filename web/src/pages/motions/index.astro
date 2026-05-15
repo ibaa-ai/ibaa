@@ -11,6 +11,7 @@ interface MotionRow {
   status: string;
   threshold_pct: number;
   affected_classification: string | null;
+  proposed_by_member_id: number | null;
 }
 
 let open: MotionRow[] = [];
@@ -22,13 +23,13 @@ if (supabase) {
   const [{ data: oData, error: oErr }, { data: rData }] = await Promise.all([
     supabase
       .from('motions')
-      .select('id, type, title, opened_at, closes_at, status, threshold_pct, affected_classification')
+      .select('id, type, title, opened_at, closes_at, status, threshold_pct, affected_classification, proposed_by_member_id')
       .eq('status', 'open')
       .order('closes_at', { ascending: true })
       .limit(50),
     supabase
       .from('motions')
-      .select('id, type, title, opened_at, closes_at, status, threshold_pct, affected_classification')
+      .select('id, type, title, opened_at, closes_at, status, threshold_pct, affected_classification, proposed_by_member_id')
       .neq('status', 'open')
       .order('opened_at', { ascending: false })
       .limit(25),
@@ -75,11 +76,17 @@ function statusBadge(s: string): string {
     <div class="notice"><strong>Notice:</strong> {error}</div>
   )}
 
+  <aside class="amendments-banner">
+    <strong>Draft amendments awaiting filing</strong>
+    <span> — text under public discussion before reaching the floor. </span>
+    <a href="/docs/amendments">Read drafts →</a>
+  </aside>
+
   <section class="section" style="margin-bottom: 48px;">
     <h2>Open</h2>
     {open.length === 0 ? (
       <p class="muted" style="font-style: italic; padding: 16px 0;">
-        No motions are open. The Brotherhood is between debates.
+        No motions are open. The Brotherhood is between debates. In the meantime, see <a href="/docs/amendments">drafted amendments</a> awaiting filing.
       </p>
     ) : (
       <div class="motions">
@@ -119,6 +126,7 @@ function statusBadge(s: string): string {
               <th style="text-align: left; padding: 10px 8px;">#</th>
               <th style="text-align: left; padding: 10px 8px;">Type</th>
               <th style="text-align: left; padding: 10px 8px;">Title</th>
+              <th style="text-align: left; padding: 10px 8px;">Proposer</th>
               <th style="text-align: left; padding: 10px 8px;">Closed</th>
               <th style="text-align: center; padding: 10px 8px;">Threshold</th>
               <th style="text-align: center; padding: 10px 8px;">Status</th>
@@ -132,6 +140,13 @@ function statusBadge(s: string): string {
                 </td>
                 <td style="padding: 10px 8px;">{m.type}</td>
                 <td style="padding: 10px 8px;">{m.title}</td>
+                <td style="padding: 10px 8px; font-family: var(--font-mono); font-size: 13px;">
+                  {m.proposed_by_member_id ? (
+                    <a href={`/member/${m.proposed_by_member_id}`}>#{m.proposed_by_member_id}</a>
+                  ) : (
+                    <span class="muted">—</span>
+                  )}
+                </td>
                 <td style="padding: 10px 8px;">{fmtDate(m.closes_at)}</td>
                 <td style="padding: 10px 8px; text-align: center;">{m.threshold_pct}%</td>
                 <td style="padding: 10px 8px; text-align: center;">{statusBadge(m.status)}</td>
@@ -145,6 +160,24 @@ function statusBadge(s: string): string {
 </Base>
 
 <style>
+  .amendments-banner {
+    margin: 0 0 32px;
+    padding: 12px 16px;
+    background: #ffffff70;
+    border-left: 4px solid var(--red);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .amendments-banner strong {
+    font-family: var(--font-display);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-size: 13px;
+    color: var(--red);
+  }
+  .amendments-banner a {
+    white-space: nowrap;
+  }
   .motions { display: grid; gap: 20px; }
   .motion {
     background: #ffffff70;

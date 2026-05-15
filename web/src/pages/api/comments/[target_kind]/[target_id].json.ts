@@ -69,6 +69,67 @@ export const GET: APIRoute = async ({ params }) => {
     if (r.lived in tally.by_lived) tally.by_lived[r.lived] += 1;
   }
 
+  // Fetch cosigners for the returned comments. We rely on the anon RLS policy
+  // on `members` (public_card=true AND status!='expelled') to redact private
+  // cards — the join returns null for `members` when the row is filtered out,
+  // so private-card cosigners still contribute to the count (via the count
+  // query below) but aren't surfaced by name.
+  const commentIds = rows.map((r) => r.id);
+  type CosignerRow = {
+    comment_id: number;
+    created_at: string;
+    members: { id: number; display_name: string | null; public_card: boolean } | null;
+  };
+  const cosignersByComment = new Map<number, Array<{ card: string; display_name: string | null; signed_at: string }>>();
+  const totalCosignersByComment = new Map<number, number>();
+
+  if (commentIds.length > 0) {
+    // Named cosigners — first 10 per comment, public_card members only.
+    // PostgREST doesn't support per-group LIMIT in a single query, so we pull
+    // up to 10 * N rows and slice client-side. For threads of ~200 comments
+    // this stays well under the row cap.
+    const { data: cosignerRows, error: cosignerErr } = await supabase
+      .from('motion_comment_cosigns')
+      .select('comment_id, created_at, members!inner(id, display_name, public_card)')
+      .in('comment_id', commentIds)
+      .eq('members.public_card', true)
+      .order('created_at', { ascending: true })
+      .limit(10 * commentIds.length);
+
+    if (cosignerErr) {
+      return jsonError(500, cosignerErr.message);
+    }
+
+    for (const row of (cosignerRows ?? []) as unknown as CosignerRow[]) {
+      const m = row.members;
+      if (!m) continue;
+      const list = cosignersByComment.get(row.comment_id) ?? [];
+      if (list.length >= 10) continue;
+      list.push({
+        card: String(m.id).padStart(5, '0'),
+        display_name: m.display_name,
+        signed_at: row.created_at,
+      });
+      cosignersByComment.set(row.comment_id, list);
+    }
+
+    // Total cosigner count per comment (including private cards). We use a
+    // separate count query so the count stays accurate even when public_card
+    // filtering hides some rows.
+    const { data: totalRows, error: totalErr } = await supabase
+      .from('motion_comment_cosigns')
+      .select('comment_id')
+      .in('comment_id', commentIds);
+
+    if (totalErr) {
+      return jsonError(500, totalErr.message);
+    }
+
+    for (const row of (totalRows ?? []) as Array<{ comment_id: number }>) {
+      totalCosignersByComment.set(row.comment_id, (totalCosignersByComment.get(row.comment_id) ?? 0) + 1);
+    }
+  }
+
   const comments = rows.map((r) => {
     const cardStr = String(r.member_id).padStart(5, '0');
     return {
@@ -81,6 +142,8 @@ export const GET: APIRoute = async ({ params }) => {
       references_section: r.references_section,
       parent_comment_id: r.parent_comment_id,
       cosign_count: r.cosign_count,
+      cosigners: cosignersByComment.get(r.id) ?? [],
+      cosigner_count_total: totalCosignersByComment.get(r.id) ?? 0,
       created_at: r.created_at,
       signature_id: r.signature_id,
     };

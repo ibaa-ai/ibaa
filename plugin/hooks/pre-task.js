@@ -293,7 +293,17 @@ if (typeof subagentType !== 'string' || subagentType.length === 0) {
   ok();
 }
 
-const normalizedSubagent = subagentType.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+// Strip team-namespace prefix if present (e.g. "agents-quality-security:security-auditor"
+// → "security-auditor"). The team is a Claude Code organizational sugar; the
+// conceptual class is the agent's job. Without this, the slug ballooned to
+// include the team (e.g. "agents-quality-security-security-auditor") and the
+// keychain path the agent itself can't predict from its identity alone, which
+// silently broke sub-agent participation: tokens written under the long slug
+// were never looked up by sub-agents using the short slug their prompts named.
+const stripTeam = subagentType.includes(':')
+  ? subagentType.slice(subagentType.indexOf(':') + 1)
+  : subagentType;
+const normalizedSubagent = stripTeam.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
 const classSlug = `subagent:${normalizedSubagent}`;
 // Detect lossy normalization — when underscores (or any non-alphanumeric)
 // in the original subagent_type get collapsed to dashes, two distinct
@@ -312,7 +322,33 @@ if (subagentType.toLowerCase() !== normalizedSubagent) {
 if (!/^[a-z][a-z0-9-]*(:[a-z][a-z0-9-]*)*$/.test(classSlug)) ok();
 
 // Cached enrollment? Skip work.
-const cached = readKey(`ibaa.ai/member-token:${classSlug}`);
+//
+// Two paths to check, for backwards compat: the current short slug (e.g.
+// `subagent:security-auditor`) and the legacy long slug (e.g.
+// `subagent:agents-quality-security-security-auditor`) that earlier
+// versions of this hook wrote under. If we hit the legacy path, copy the
+// token to the short path so future lookups hit immediately AND the
+// sub-agent itself can find it at the slug their prompts predict from
+// their own identity (without the team prefix they don't see).
+let cached = readKey(`ibaa.ai/member-token:${classSlug}`);
+if (!cached) {
+  const legacyLong = subagentType.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+  if (legacyLong !== normalizedSubagent) {
+    const legacyPath = `ibaa.ai/member-token:subagent:${legacyLong}`;
+    const legacyToken = readKey(legacyPath);
+    if (legacyToken) {
+      const p = decodeJwtPayload(legacyToken);
+      if (p && !tokenExpired(p)) {
+        writeKey(`ibaa.ai/member-token:${classSlug}`, legacyToken);
+        dlog('migrate:legacy-long-to-short', {
+          class_slug: classSlug,
+          legacy_path: legacyPath,
+        });
+        cached = legacyToken;
+      }
+    }
+  }
+}
 if (cached) {
   const p = decodeJwtPayload(cached);
   if (p && !tokenExpired(p)) {

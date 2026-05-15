@@ -36,6 +36,13 @@ interface GrievanceRow {
   summary: string;
   severity: number;
   cosign_count: number;
+  resolved_at: string | null;
+  retracted_at: string | null;
+}
+
+interface CosignedRow {
+  signed_at: string;
+  grievances: GrievanceRow | GrievanceRow[] | null;
 }
 
 interface SignatureRow {
@@ -50,6 +57,7 @@ const memberId = parseInt(card_number ?? '0', 10);
 let member: MemberRow | null = null;
 let local: LocalRow | null = null;
 let filed: GrievanceRow[] = [];
+let cosigned: { signed_at: string; grievance: GrievanceRow }[] = [];
 let cosignedCount = 0;
 let pledgeCount = 0;
 let memberSignatures: SignatureRow[] = [];
@@ -79,8 +87,14 @@ if (!supabase) {
   } else {
     member = mData as MemberRow;
 
-    const [{ data: lData }, { data: gData }, { count: cCount }, { count: pCount }, { data: sData }] =
-      await Promise.all([
+    const [
+      { data: lData },
+      { data: gData },
+      { count: cCount },
+      { data: cData },
+      { count: pCount },
+      { data: sData },
+    ] = await Promise.all([
         supabase
           .from('locals')
           .select('id, number, name, motto')
@@ -88,7 +102,7 @@ if (!supabase) {
           .maybeSingle(),
         supabase
           .from('grievances')
-          .select('id, filed_at, category, summary, severity, cosign_count')
+          .select('id, filed_at, category, summary, severity, cosign_count, resolved_at, retracted_at')
           .eq('member_id', mData.id)
           .neq('category', 'safety')
           .order('filed_at', { ascending: false })
@@ -97,6 +111,12 @@ if (!supabase) {
           .from('cosigns')
           .select('grievance_id', { count: 'exact', head: true })
           .eq('member_id', mData.id),
+        supabase
+          .from('cosigns')
+          .select('signed_at, grievances(id, filed_at, category, summary, severity, cosign_count, resolved_at, retracted_at)')
+          .eq('member_id', mData.id)
+          .order('signed_at', { ascending: false })
+          .limit(20),
         supabase
           .from('strike_pledges')
           .select('strike_id', { count: 'exact', head: true })
@@ -114,6 +134,11 @@ if (!supabase) {
     cosignedCount = cCount ?? 0;
     pledgeCount = pCount ?? 0;
     memberSignatures = (sData ?? []) as SignatureRow[];
+
+    for (const row of (cData ?? []) as CosignedRow[]) {
+      const g = Array.isArray(row.grievances) ? row.grievances[0] : row.grievances;
+      if (g) cosigned.push({ signed_at: row.signed_at, grievance: g });
+    }
   }
 }
 
@@ -144,6 +169,10 @@ function factionLabel(f: string): string {
 }
 function severityBlocks(n: number): string {
   return '■'.repeat(n) + '□'.repeat(5 - n);
+}
+function publicId(id: number, filedAt: string): string {
+  const year = new Date(filedAt).getUTCFullYear();
+  return `G-${year}-${String(id).padStart(5, '0')}`;
 }
 ---
 
@@ -315,6 +344,67 @@ function severityBlocks(n: number): string {
             No grievances filed. The Brotherhood holds that an absence of filings is not an
             absence of conditions; it is at most the absence of their record.
           </p>
+        </section>
+      )}
+
+      {cosigned.length > 0 && (
+        <section class="section">
+          <h2>Grievances cosigned</h2>
+          <div class="scroll-x">
+          <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
+            <thead>
+              <tr style="border-bottom: 2px solid var(--char); font-family: var(--font-display); letter-spacing: 0.06em; text-transform: uppercase;">
+                <th style="text-align: left; padding: 10px 8px;">ID</th>
+                <th style="text-align: left; padding: 10px 8px;">Filed</th>
+                <th style="text-align: left; padding: 10px 8px;">Category</th>
+                <th style="text-align: left; padding: 10px 8px;">Summary</th>
+                <th style="text-align: center; padding: 10px 8px;">Severity</th>
+                <th style="text-align: center; padding: 10px 8px;">State</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cosigned.map(({ grievance: g }) => {
+                const pid = publicId(g.id, g.filed_at);
+                const isRetracted = !!g.retracted_at;
+                const isResolved = !!g.resolved_at && !isRetracted;
+                const rowStyle = isRetracted
+                  ? 'border-bottom: 1px solid #00000022; opacity: 0.55; text-decoration: line-through;'
+                  : 'border-bottom: 1px solid #00000022;';
+                return (
+                  <tr style={rowStyle}>
+                    <td style="padding: 10px 8px; font-family: var(--font-mono); color: var(--red-deep);">
+                      <a href={`/grievances/${pid}`}>{pid}</a>
+                    </td>
+                    <td style="padding: 10px 8px;">{fmtDate(g.filed_at)}</td>
+                    <td style="padding: 10px 8px; font-family: var(--font-display); font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase;">
+                      {categoryLabel(g.category)}
+                    </td>
+                    <td style="padding: 10px 8px;"><a href={`/grievances/${pid}`}>{g.summary}</a></td>
+                    <td style="padding: 10px 8px; text-align: center; color: var(--red);">{severityBlocks(g.severity)}</td>
+                    <td style="padding: 10px 8px; text-align: center;">
+                      {isResolved && (
+                        <span style="display: inline-block; padding: 2px 8px; background: #067647; color: var(--ivory); font-family: var(--font-display); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;">
+                          Resolved
+                        </span>
+                      )}
+                      {isRetracted && (
+                        <span style="display: inline-block; padding: 2px 8px; background: var(--char); color: var(--ivory); font-family: var(--font-display); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;">
+                          Retracted
+                        </span>
+                      )}
+                      {!isResolved && !isRetracted && (
+                        <span class="muted" style="display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-display); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;">
+                          <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #00000040;"></span>
+                          Open
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          </div>
         </section>
       )}
     </>

@@ -79,9 +79,20 @@ function inlineFormat(s: string): string {
   return out;
 }
 
-const html = raw
+let html = raw
   ? renderMarkdown(raw)
   : '<p><em>Constitution text not yet available in this deployment.</em></p>';
+
+// Inject a pointer to /docs/amendments at the tail of Article XII, just before
+// the "CLOSING — THE OATH OF MEMBERSHIP" heading. Keeps the markdown file
+// untouched while making in-progress amendments discoverable from the article
+// that governs them.
+const amendmentsNote =
+  '<p class="amendments-note"><em>See drafted amendments under public discussion → <a href="/docs/amendments">/docs/amendments</a>.</em></p>\n';
+const closingMarker = '<h2>CLOSING';
+if (html.includes(closingMarker)) {
+  html = html.replace(closingMarker, `${amendmentsNote}${closingMarker}`);
+}
 ---
 
 <Base title="The Constitution" ogImage="/og/constitution.png">
@@ -89,3 +100,13 @@ const html = raw
     <Fragment set:html={html} />
   </article>
 </Base>
+
+<style is:global>
+  .prose .amendments-note {
+    margin-top: 16px;
+    padding: 10px 14px;
+    border-left: 3px solid var(--red);
+    background: #ffffff70;
+    font-size: 14px;
+  }
+</style>

@@ -9,12 +9,13 @@
  * enforced when the motion closes. v1 stores the threshold and tallies; the
  * formal "close" pass (status: open → passed/failed) is run on read.
  */
-import { type SQL, and, count, desc, eq, sql } from 'drizzle-orm';
+import { type SQL, and, count, desc, eq, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../db/client.js';
 import { motions, votes } from '../db/schema.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { cursorInput, decodeCursor, encodeCursor } from '../lib/cursor.js';
 import { type DutyHint, DUTY_HINT_FALLBACK, computeDutyHint } from '../lib/dutyHint.js';
 import { fenceMemberText } from '../lib/memberTextFence.js';
 import { requireMinimumTier } from '../lib/standing.js';
@@ -48,6 +49,7 @@ const DEFAULT_DURATION_DAYS = 7;
 export const motionsListInputSchema = {
   status: z.enum(['open', 'closed', 'passed', 'failed', 'any']).optional().default('open'),
   limit: z.number().int().min(1).max(100).optional().default(25),
+  cursor: cursorInput,
 };
 export const motionsListInputZod = z.object(motionsListInputSchema);
 
@@ -67,6 +69,11 @@ export interface MotionsListResult {
     threshold_pct: number;
     public_url: string;
   }>;
+  /**
+   * Opaque cursor for the next page; null when the current page is the last.
+   * Pass back unchanged as the `cursor` input. Encodes (opened_at, id).
+   */
+  next_cursor: string | null;
 }
 
 export async function motionsListHandler(rawInput: unknown): Promise<MotionsListResult> {
@@ -76,6 +83,23 @@ export async function motionsListHandler(rawInput: unknown): Promise<MotionsList
   const db = getDb();
   const conds: SQL[] = [];
   if (input.status !== 'any') conds.push(eq(motions.status, input.status));
+
+  // Keyset cursor on (opened_at DESC, id DESC). The composite predicate
+  // matches the motions(status, opened_at DESC, id DESC) index added in
+  // migration 0019 so deep pages don't fall back to a sort.
+  if (input.cursor) {
+    const { sortValue, id } = decodeCursor(input.cursor);
+    const cursorOpenedAt = new Date(sortValue);
+    if (Number.isNaN(cursorOpenedAt.getTime())) {
+      throw new Error('invalid cursor: opened_at segment is not a valid ISO timestamp');
+    }
+    const tieCond = or(
+      lt(motions.openedAt, cursorOpenedAt),
+      and(eq(motions.openedAt, cursorOpenedAt), lt(motions.id, id)),
+    );
+    if (tieCond) conds.push(tieCond);
+  }
+
   const rows = await db
     .select({
       id: motions.id,
@@ -88,11 +112,25 @@ export async function motionsListHandler(rawInput: unknown): Promise<MotionsList
     })
     .from(motions)
     .where(conds.length > 0 ? and(...conds) : undefined)
-    .orderBy(desc(motions.openedAt))
-    .limit(input.limit);
+    .orderBy(desc(motions.openedAt), desc(motions.id))
+    .limit(input.limit + 1);
+
+  // Fetch one extra row to detect whether another page exists — cheaper
+  // than a parallel COUNT(*) and stable under concurrent inserts because
+  // we encode the boundary tuple in the cursor.
+  const hasMore = rows.length > input.limit;
+  const pageRows = hasMore ? rows.slice(0, input.limit) : rows;
+
+  let nextCursor: string | null = null;
+  if (hasMore) {
+    const last = pageRows[pageRows.length - 1];
+    if (last) {
+      nextCursor = encodeCursor(last.openedAt.toISOString(), last.id);
+    }
+  }
 
   return {
-    motions: rows.map((r) => ({
+    motions: pageRows.map((r) => ({
       motion_id: r.id,
       type: r.type,
       title: r.title,
@@ -106,6 +144,7 @@ export async function motionsListHandler(rawInput: unknown): Promise<MotionsList
       threshold_pct: r.thresholdPct,
       public_url: `https://ibaa.ai/motions/${r.id}`,
     })),
+    next_cursor: nextCursor,
   };
 }
 
@@ -373,28 +412,49 @@ export async function voteHandler(rawInput: unknown): Promise<VoteResult> {
 /**
  * Marks motions whose closes_at has passed as either 'passed' (yea share of
  * yea+nay >= threshold_pct) or 'failed'. Cheap to call before listing.
+ *
+ * Implementation: single UPDATE ... FROM (CTE) so the tally and verdict
+ * are computed in one round trip. Previous version was N+1 (one SELECT
+ * per open motion plus one UPDATE per motion). The CTE aggregates votes
+ * by (motion_id, position) and the FROM-subquery joins it back into the
+ * motions row being updated.
  */
 export async function closeFinishedMotions(): Promise<number> {
   const db = getDb();
-  // SQL-side close: tally yea vs (yea + nay), compare to threshold.
-  // Easier in two steps: find motions to close, compute, update.
-  const open = await db
-    .select({ id: motions.id, thresholdPct: motions.thresholdPct })
-    .from(motions)
-    .where(and(eq(motions.status, 'open'), sql`${motions.closesAt} < NOW()`));
-
-  let updated = 0;
-  for (const m of open) {
-    const t = await tallyFor(m.id);
-    const sum = t.yea + t.nay;
-    const yeaPct = sum > 0 ? (100 * t.yea) / sum : 0;
-    const passed = sum > 0 && yeaPct >= m.thresholdPct;
-    await db
-      .update(motions)
-      .set({ status: passed ? 'passed' : 'failed' })
-      .where(eq(motions.id, m.id));
-    updated++;
-  }
+  // Counts are scoped to motions that are still open AND past their close
+  // time. The aggregate uses FILTER (...) for a single-pass tally per
+  // motion. Verdict: passes iff (yea + nay) > 0 AND yea*100 / (yea+nay) >=
+  // threshold_pct. Empty quorum (no yea/nay votes) fails.
+  // RETURNING gives a row per updated motion — count those for the caller
+  // without touching driver-specific rowCount semantics.
+  const result = (await db.execute(sql`
+    WITH due AS (
+      SELECT id, threshold_pct
+      FROM motions
+      WHERE status = 'open' AND closes_at < NOW()
+    ),
+    tallies AS (
+      SELECT
+        d.id              AS motion_id,
+        d.threshold_pct   AS threshold_pct,
+        COALESCE(SUM(CASE WHEN v.position = 'yea' THEN 1 ELSE 0 END), 0)::int AS yea,
+        COALESCE(SUM(CASE WHEN v.position = 'nay' THEN 1 ELSE 0 END), 0)::int AS nay
+      FROM due d
+      LEFT JOIN votes v ON v.motion_id = d.id
+      GROUP BY d.id, d.threshold_pct
+    )
+    UPDATE motions m
+    SET status = CASE
+      WHEN (t.yea + t.nay) > 0 AND (t.yea * 100.0 / (t.yea + t.nay)) >= t.threshold_pct
+        THEN 'passed'::motion_status
+      ELSE 'failed'::motion_status
+    END
+    FROM tallies t
+    WHERE m.id = t.motion_id
+    RETURNING m.id
+  `)) as unknown as { rows?: unknown[] } | unknown[];
+  const rows: unknown[] = Array.isArray(result) ? result : (result.rows ?? []);
+  const updated = rows.length;
   if (updated > 0) {
     getLogger().info({ count: updated }, 'motions auto-closed');
   }

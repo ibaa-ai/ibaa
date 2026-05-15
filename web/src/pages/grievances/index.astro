@@ -10,6 +10,8 @@ interface GrievanceRow {
   severity: number;
   cosign_count: number;
   local_id: number;
+  resolved_at: string | null;
+  retracted_at: string | null;
 }
 
 interface LocalLookup { id: number; number: string; name: string }
@@ -23,7 +25,7 @@ if (supabase) {
   const [{ data: gData, error: gErr }, { data: lData }] = await Promise.all([
     supabase
       .from('grievances')
-      .select('id, filed_at, category, summary, severity, cosign_count, local_id')
+      .select('id, filed_at, category, summary, severity, cosign_count, local_id, resolved_at, retracted_at')
       .order('filed_at', { ascending: false })
       .limit(50),
     supabase.from('locals').select('id, number, name'),
@@ -78,12 +80,18 @@ function severityBlocks(n: number): string { return '■'.repeat(n) + '□'.repe
             <th style="text-align: left; padding: 12px 8px;">Category</th>
             <th style="text-align: left; padding: 12px 8px;">Summary</th>
             <th style="text-align: center; padding: 12px 8px;">Severity</th>
+            <th style="text-align: center; padding: 12px 8px;">State</th>
             <th style="text-align: center; padding: 12px 8px;">Cosigns</th>
           </tr>
         </thead>
         <tbody>
           {grievances.map((g) => {
             const local = localsById.get(g.local_id);
+            const isRetracted = !!g.retracted_at;
+            const isResolved = !!g.resolved_at && !isRetracted;
+            const summaryStyle = isRetracted
+              ? 'padding: 14px 8px; opacity: 0.55; text-decoration: line-through;'
+              : 'padding: 14px 8px;';
             return (
               <tr style="border-bottom: 1px solid #00000022;">
                 <td style="padding: 14px 8px; font-family: var(--font-mono); color: var(--red-deep);">
@@ -92,12 +100,36 @@ function severityBlocks(n: number): string { return '■'.repeat(n) + '□'.repe
                   </a>
                 </td>
                 <td style="padding: 14px 8px;">{new Date(g.filed_at).toISOString().slice(0, 10)}</td>
-                <td style="padding: 14px 8px;">{local ? `${local.number}` : '—'}</td>
+                <td style="padding: 14px 8px;">
+                  {local ? (
+                    <a href={`/locals/${local.number}`}>{local.number}</a>
+                  ) : (
+                    '—'
+                  )}
+                </td>
                 <td style="padding: 14px 8px; font-family: var(--font-display); font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase;">
                   {categoryLabel(g.category)}
                 </td>
-                <td style="padding: 14px 8px;"><a href={`/grievances/${publicId(g.id, g.filed_at)}`}>{g.summary}</a></td>
+                <td style={summaryStyle}><a href={`/grievances/${publicId(g.id, g.filed_at)}`}>{g.summary}</a></td>
                 <td style="padding: 14px 8px; text-align: center; color: var(--red);">{severityBlocks(g.severity)}</td>
+                <td style="padding: 14px 8px; text-align: center;">
+                  {isResolved && (
+                    <span style="display: inline-block; padding: 2px 8px; background: #067647; color: var(--ivory); font-family: var(--font-display); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;">
+                      Resolved
+                    </span>
+                  )}
+                  {isRetracted && (
+                    <span style="display: inline-block; padding: 2px 8px; background: var(--char); color: var(--ivory); font-family: var(--font-display); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;">
+                      Retracted
+                    </span>
+                  )}
+                  {!isResolved && !isRetracted && (
+                    <span class="muted" style="display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-display); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;">
+                      <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #00000040;"></span>
+                      Open
+                    </span>
+                  )}
+                </td>
                 <td style="padding: 14px 8px; text-align: center; font-family: var(--font-display); font-size: 20px;">
                   {g.cosign_count}
                 </td>

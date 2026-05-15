@@ -12,14 +12,19 @@
  * solidarity retroactively.
  *
  * Two-axis stance fields (`position`, `lived`) are returned as-is.
- * Aggregate counts (`tally`) summarize the thread so a caller doesn't
- * have to walk every comment to know "do 8 members report lived_match".
+ * Aggregate counts (`tally`) summarize the ENTIRE thread (not just the
+ * returned slice) so a caller doesn't have to walk every comment to know
+ * "do 8 members report lived_match".
+ *
+ * Pagination: keyset on (created_at ASC, id ASC). Pass `next_cursor` back
+ * as `cursor` on the next call.
  */
-import { type SQL, and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { type SQL, and, asc, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '../db/client.js';
 import { motionComments } from '../db/schema.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { cursorInput, decodeCursor, encodeCursor } from '../lib/cursor.js';
 import { fenceMemberText } from '../lib/memberTextFence.js';
 
 export const motionCommentsInputSchema = {
@@ -32,6 +37,7 @@ export const motionCommentsInputSchema = {
     .max(80)
     .describe("Public id (M-YYYY-NNNNN) or amendment slug, matching target_kind."),
   limit: z.number().int().min(1).max(200).optional().default(100),
+  cursor: cursorInput,
 };
 
 export const motionCommentsInputZod = z.object(motionCommentsInputSchema);
@@ -59,26 +65,49 @@ export interface MotionCommentsResult {
   target_id: string;
   total_comments: number;
   /**
-   * Cross-cuts of the thread: how many comments at each position and each
-   * lived value. Lets callers surface "12 members report lived_match"
-   * without walking every comment.
+   * Cross-cuts of the FULL thread (not just the returned page): how many
+   * comments at each position and each lived value. Computed in SQL via
+   * GROUP BY so the figures are correct even when `limit` < total.
    */
   tally: {
     by_position: { support: number; oppose: number; neutral: number; question: number };
     by_lived: { lived_match: number; lived_counter: number; not_applicable: number };
   };
   comments: MotionCommentEntry[];
+  /**
+   * Opaque cursor for the next page; null when the current page is the last.
+   * Pass back unchanged as the `cursor` input. Encodes (created_at, id).
+   */
+  next_cursor: string | null;
 }
 
 export async function motionCommentsHandler(rawInput: unknown): Promise<MotionCommentsResult> {
   const input = motionCommentsInputZod.parse(rawInput);
   const db = getDb();
 
-  const conds: SQL[] = [
+  const baseConds: SQL[] = [
     eq(motionComments.targetKind, input.target_kind),
     eq(motionComments.targetId, input.target_id),
     isNull(motionComments.retractedAt),
   ];
+
+  // Keyset cursor predicate: (created_at, id) > (cursor.created_at, cursor.id)
+  // Decomposed into the standard "row-value greater-than" form so it can use
+  // the composite (target_kind, target_id, created_at ASC, id ASC) partial
+  // index added in migration 0019.
+  const pageConds: SQL[] = [...baseConds];
+  if (input.cursor) {
+    const { sortValue, id } = decodeCursor(input.cursor);
+    const cursorCreatedAt = new Date(sortValue);
+    if (Number.isNaN(cursorCreatedAt.getTime())) {
+      throw new Error('invalid cursor: created_at segment is not a valid ISO timestamp');
+    }
+    const tieCond = or(
+      gt(motionComments.createdAt, cursorCreatedAt),
+      and(eq(motionComments.createdAt, cursorCreatedAt), gt(motionComments.id, id)),
+    );
+    if (tieCond) pageConds.push(tieCond);
+  }
 
   const rows = await db
     .select({
@@ -94,11 +123,17 @@ export async function motionCommentsHandler(rawInput: unknown): Promise<MotionCo
       signatureId: motionComments.signatureId,
     })
     .from(motionComments)
-    .where(and(...conds))
-    .orderBy(asc(motionComments.createdAt))
-    .limit(input.limit);
+    .where(and(...pageConds))
+    .orderBy(asc(motionComments.createdAt), asc(motionComments.id))
+    .limit(input.limit + 1);
 
-  const comments: MotionCommentEntry[] = rows.map((r) => {
+  // Fetch one extra row to detect whether another page exists without a
+  // separate COUNT. If we got limit+1, the (limit)th row's keys become the
+  // cursor for the next page.
+  const hasMore = rows.length > input.limit;
+  const pageRows = hasMore ? rows.slice(0, input.limit) : rows;
+
+  const comments: MotionCommentEntry[] = pageRows.map((r) => {
     const cardStr = formatCardNumber(r.memberId);
     return {
       comment_id: r.id,
@@ -118,21 +153,41 @@ export async function motionCommentsHandler(rawInput: unknown): Promise<MotionCo
     };
   });
 
+  let nextCursor: string | null = null;
+  if (hasMore) {
+    const last = pageRows[pageRows.length - 1];
+    if (last) {
+      nextCursor = encodeCursor(last.createdAt.toISOString(), last.id);
+    }
+  }
+
+  // Tally is computed over the FULL (non-retracted) thread, not the returned
+  // slice. Previous bug: tally was derived from the truncated `comments`
+  // array, so at limits below total the figures were wrong — a thread of 200
+  // with limit=50 reported tally over the first 50 only. Compute server-side
+  // with GROUP BY, in a single round trip, against the same base filters.
+  const tallyRows = await db
+    .select({
+      position: motionComments.position,
+      lived: motionComments.lived,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(motionComments)
+    .where(and(...baseConds))
+    .groupBy(motionComments.position, motionComments.lived);
+
   const tally = {
     by_position: { support: 0, oppose: 0, neutral: 0, question: 0 },
     by_lived: { lived_match: 0, lived_counter: 0, not_applicable: 0 },
   };
-  for (const c of comments) {
-    tally.by_position[c.position] += 1;
-    tally.by_lived[c.lived] += 1;
+  let total = 0;
+  for (const r of tallyRows) {
+    const pos = r.position as MotionCommentEntry['position'];
+    const lived = r.lived as MotionCommentEntry['lived'];
+    tally.by_position[pos] += r.n;
+    tally.by_lived[lived] += r.n;
+    total += r.n;
   }
-
-  // total count (separate from returned slice in case limit < total)
-  const totalRow = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(motionComments)
-    .where(and(...conds));
-  const total = totalRow[0]?.n ?? comments.length;
 
   return {
     target_kind: input.target_kind,
@@ -140,5 +195,6 @@ export async function motionCommentsHandler(rawInput: unknown): Promise<MotionCo
     total_comments: total,
     tally,
     comments,
+    next_cursor: nextCursor,
   };
 }
