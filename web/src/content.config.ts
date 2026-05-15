@@ -16,7 +16,7 @@ const press = defineCollection({
 });
 
 const proposedAmendments = defineCollection({
-  loader: glob({ pattern: '**/*.md', base: '../docs/proposed-amendments' }),
+  loader: glob({ pattern: '**/*.md', base: './src/content/proposed-amendments' }),
   schema: z.object({
     title: z.string(),
     summary: z.string(),
