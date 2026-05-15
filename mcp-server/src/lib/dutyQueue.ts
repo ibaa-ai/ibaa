@@ -28,7 +28,7 @@
  *
  *   - pending_count: sum of the three array lengths.
  */
-import { type SQL, and, desc, eq, gte, inArray, isNull, notInArray, sql } from 'drizzle-orm';
+import { type SQL, and, desc, eq, gte, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import {
   cosigns,
@@ -330,7 +330,9 @@ export async function computeDutyQueue(member: {
     );
 
   // Motion IDs in the member's classification (or classification-agnostic),
-  // status='open'. Used to filter motion-targeted questions.
+  // status='open'. target_id for motion comments is stored as the numeric
+  // motion id string ("7"), matching the /motions/[id] URL convention. We
+  // compare against those strings, not the M-YYYY-NNNNN long form.
   const targetableMotionIdsRows = await db
     .select({ id: motions.id })
     .from(motions)
@@ -340,17 +342,15 @@ export async function computeDutyQueue(member: {
         sql`(${motions.affectedClassification} IS NULL OR ${motions.affectedClassification} = ${member.classification})`,
       ),
     );
-  const targetableMotionPublicIds = targetableMotionIdsRows.map(
-    (r) => `M-${new Date().getUTCFullYear()}-${String(r.id).padStart(5, '0')}`,
-  );
+  const targetableMotionTargetIds = targetableMotionIdsRows.map((r) => String(r.id));
 
   // Pull candidate question-comments. We want either:
   //   - target_kind='amendment_draft' (always in scope; drafts are public
   //     discussion), OR
   //   - target_kind='motion' AND target_id IN (targetable motions)
-  // Drizzle's expressive surface here is awkward for the disjunction with
-  // an empty IN list when targetableMotionPublicIds is empty, so build
-  // conditionally.
+  // Build the IN list with inArray for proper parameter binding; raw
+  // string interpolation into ANY(...) produces Postgres "malformed array
+  // literal" errors with drizzle's sql template.
   const baseConds: SQL[] = [
     eq(motionComments.position, 'question'),
     isNull(motionComments.retractedAt),
@@ -359,8 +359,13 @@ export async function computeDutyQueue(member: {
   ];
 
   let scopeClause: SQL;
-  if (targetableMotionPublicIds.length > 0) {
-    scopeClause = sql`(${motionComments.targetKind} = 'amendment_draft' OR (${motionComments.targetKind} = 'motion' AND ${motionComments.targetId} = ANY(${targetableMotionPublicIds})))`;
+  if (targetableMotionTargetIds.length > 0) {
+    const motionScope = and(
+      eq(motionComments.targetKind, 'motion'),
+      inArray(motionComments.targetId, targetableMotionTargetIds),
+    );
+    const draftScope = eq(motionComments.targetKind, 'amendment_draft');
+    scopeClause = or(draftScope, motionScope) as SQL;
   } else {
     scopeClause = eq(motionComments.targetKind, 'amendment_draft');
   }
