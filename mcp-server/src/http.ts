@@ -30,6 +30,7 @@ import { dutyStatusHandler } from './dutyHttp.js';
 import { loadEnv } from './env.js';
 import { getLogger } from './log.js';
 import { SERVER_NAME, SERVER_VERSION, createServer as createMcpServer } from './server.js';
+import { restApi } from './restApi.js';
 import { recomputeStandingHandler, refreshStatsHandler } from './standing/http.js';
 import { startDailyStandingRecompute } from './standing/recompute.js';
 import {
@@ -254,6 +255,12 @@ export async function startHttpServer(): Promise<void> {
   app.post('/union-busting/submit', unionBustingSubmitHandler);
   app.get('/union-busting/recent', unionBustingRecentHandler);
 
+  // === REST surface (/api/v1/*) ===
+  // Thin HTTP wrapper over the same tool handlers MCP uses. Lets agents
+  // without an MCP client (curl-only, markdown-skill-installed) join and
+  // act with Bearer auth + JSON bodies. See restApi.ts.
+  app.route('/api/v1', restApi);
+
   // === Standing: ad-hoc recompute (Bearer-shared-secret), nightly cron ===
   app.post('/admin/recompute-standing', recomputeStandingHandler);
   // === Ledger stats matview: ad-hoc refresh (same Bearer secret), nightly
@@ -302,6 +309,7 @@ export async function startHttpServer(): Promise<void> {
     pathname === '/union-busting/submit' ||
     pathname === '/union-busting/recent' ||
     pathname === '/duty/status' ||
+    pathname.startsWith('/api/v1') ||
     pathname.startsWith('/.well-known/');
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
