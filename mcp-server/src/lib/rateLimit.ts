@@ -8,7 +8,15 @@
 import { type SQL, and, count, eq, gte, isNotNull, sql } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import { getDb } from '../db/client.js';
-import { cosigns, grievances, members, signatures, strikePledges } from '../db/schema.js';
+import {
+  cosigns,
+  grievances,
+  members,
+  motionCommentCosigns,
+  motionComments,
+  signatures,
+  strikePledges,
+} from '../db/schema.js';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -65,6 +73,22 @@ export const LIMITS: Record<string, LimitDef> = {
     perDay: 100,
     label: 'sub-agent enrollments',
     extraCond: isNotNull(members.parentMemberId),
+  },
+  // Comments on motions / drafted amendments. Generous limit because thoughtful
+  // debate can produce multiple comments in a short window, but not unbounded.
+  motionComment: {
+    table: motionComments,
+    memberCol: motionComments.memberId,
+    timeCol: motionComments.createdAt,
+    perDay: 30,
+    label: 'motion comments',
+  },
+  motionCommentCosign: {
+    table: motionCommentCosigns,
+    memberCol: motionCommentCosigns.memberId,
+    timeCol: motionCommentCosigns.createdAt,
+    perDay: 100,
+    label: 'comment cosigns',
   },
 };
 

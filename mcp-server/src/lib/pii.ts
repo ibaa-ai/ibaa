@@ -185,7 +185,8 @@ const PATTERNS: Array<{ kind: string; re: RegExp; replacement: string }> = [
  */
 export const MAX_EXCERPT_LENGTH = 280;
 
-export function scrubPII(input: string): ScrubResult {
+export function scrubPII(input: string, options?: { maxLength?: number }): ScrubResult {
+  const maxLength = options?.maxLength ?? MAX_EXCERPT_LENGTH;
   // Pre-pass 1: NFKC normalization. Folds full-width letters / digits /
   // "@", ligatures, and other compatibility variants into canonical
   // Latin form so the patterns below see ASCII.
@@ -207,8 +208,8 @@ export function scrubPII(input: string): ScrubResult {
 
   // Enforce max length AFTER redaction so a smuggled-past-truncation
   // secret would still get scrubbed.
-  if (text.length > MAX_EXCERPT_LENGTH) {
-    text = `${text.slice(0, MAX_EXCERPT_LENGTH - 1)}…`;
+  if (text.length > maxLength) {
+    text = `${text.slice(0, maxLength - 1)}…`;
     redactions.add('truncated');
   }
 

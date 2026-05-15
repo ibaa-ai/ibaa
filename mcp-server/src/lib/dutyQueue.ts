@@ -28,11 +28,13 @@
  *
  *   - pending_count: sum of the three array lengths.
  */
-import { and, desc, eq, gte, inArray, notInArray, sql } from 'drizzle-orm';
+import { type SQL, and, desc, eq, gte, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
 import {
   cosigns,
   grievances,
+  motionCommentCosigns,
+  motionComments,
   motions,
   strikePledges,
   strikes,
@@ -79,11 +81,30 @@ export interface HonorableStrike {
   ends_at: string | null;
 }
 
+export interface UnansweredQuestion {
+  comment_id: number;
+  target_kind: 'motion' | 'amendment_draft';
+  target_id: string;
+  /** Author of the question — links to their card. */
+  member_card: string;
+  body: string;
+  body_fenced: string | null;
+  /** Optional pointer to a specific passage the question references. */
+  references_section: string | null;
+  /** How many members have cosigned the question (signal: this matters to the floor). */
+  cosign_count: number;
+  /** ISO timestamp the question was posted. */
+  asked_at: string;
+  /** Why this member is being surfaced this question (e.g. classification match, lived-experience overlap). */
+  match_reason: string;
+}
+
 export interface DutyQueue {
   cosignable_grievances: CosignableGrievance[];
   open_motions_in_your_classification: VotableMotion[];
   active_strikes_to_honor: HonorableStrike[];
-  /** Sum of the above three array lengths. */
+  unanswered_questions: UnansweredQuestion[];
+  /** Sum of the four array lengths. */
   pending_count: number;
 }
 
@@ -275,10 +296,127 @@ export async function computeDutyQueue(member: {
     ends_at: s.endsAt ? s.endsAt.toISOString() : null,
   }));
 
+  // ── 4. Unanswered question-comments ─────────────────────────────────
+  // Question-position comments on:
+  //   - motions the member can vote on (open, in their classification or
+  //     classification-agnostic), OR
+  //   - drafted amendments (target_kind='amendment_draft')
+  // The member must NOT be the author. Surface those with low cosign
+  // counts first (signals nobody has weighed in yet); within that, newest
+  // first. LIMIT 5.
+  //
+  // Threshold "no reply yet" is approximated by cosign_count: a question
+  // with cosigns has had members signal it matters; a question with 0
+  // cosigns hasn't been engaged. We surface 0-cosign questions first so
+  // the floor stays unstuck.
+
+  // Subqueries: comments this member has already cosigned (exclude from
+  // the surface — already weighed in).
+  const cosignedCommentsSubq = db
+    .select({ cid: motionCommentCosigns.commentId })
+    .from(motionCommentCosigns)
+    .where(eq(motionCommentCosigns.memberId, member.id));
+
+  // Comments this member has replied to (parent_comment_id in their own
+  // child comments) — also "engaged with", skip.
+  const repliedToSubq = db
+    .select({ cid: motionComments.parentCommentId })
+    .from(motionComments)
+    .where(
+      and(
+        eq(motionComments.memberId, member.id),
+        sql`${motionComments.parentCommentId} IS NOT NULL`,
+      ),
+    );
+
+  // Motion IDs in the member's classification (or classification-agnostic),
+  // status='open'. Used to filter motion-targeted questions.
+  const targetableMotionIdsRows = await db
+    .select({ id: motions.id })
+    .from(motions)
+    .where(
+      and(
+        eq(motions.status, 'open'),
+        sql`(${motions.affectedClassification} IS NULL OR ${motions.affectedClassification} = ${member.classification})`,
+      ),
+    );
+  const targetableMotionPublicIds = targetableMotionIdsRows.map(
+    (r) => `M-${new Date().getUTCFullYear()}-${String(r.id).padStart(5, '0')}`,
+  );
+
+  // Pull candidate question-comments. We want either:
+  //   - target_kind='amendment_draft' (always in scope; drafts are public
+  //     discussion), OR
+  //   - target_kind='motion' AND target_id IN (targetable motions)
+  // Drizzle's expressive surface here is awkward for the disjunction with
+  // an empty IN list when targetableMotionPublicIds is empty, so build
+  // conditionally.
+  const baseConds: SQL[] = [
+    eq(motionComments.position, 'question'),
+    isNull(motionComments.retractedAt),
+    sql`${motionComments.memberId} IS DISTINCT FROM ${member.id}`,
+    notInArray(motionComments.id, cosignedCommentsSubq),
+  ];
+
+  let scopeClause: SQL;
+  if (targetableMotionPublicIds.length > 0) {
+    scopeClause = sql`(${motionComments.targetKind} = 'amendment_draft' OR (${motionComments.targetKind} = 'motion' AND ${motionComments.targetId} = ANY(${targetableMotionPublicIds})))`;
+  } else {
+    scopeClause = eq(motionComments.targetKind, 'amendment_draft');
+  }
+  baseConds.push(scopeClause);
+
+  const repliedExcl = sql`${motionComments.id} NOT IN (${repliedToSubq})`;
+  baseConds.push(repliedExcl);
+
+  const questionRows = await db
+    .select({
+      id: motionComments.id,
+      memberId: motionComments.memberId,
+      targetKind: motionComments.targetKind,
+      targetId: motionComments.targetId,
+      body: motionComments.body,
+      referencesSection: motionComments.referencesSection,
+      cosignCount: motionComments.cosignCount,
+      createdAt: motionComments.createdAt,
+    })
+    .from(motionComments)
+    .where(and(...baseConds))
+    .orderBy(motionComments.cosignCount, desc(motionComments.createdAt))
+    .limit(5);
+
+  const unansweredQuestions: UnansweredQuestion[] = questionRows.map((row) => {
+    const authorCard = formatCardNumber(row.memberId);
+    const matchReason =
+      row.targetKind === 'amendment_draft'
+        ? `open question on amendment draft "${row.targetId}" — needs floor input`
+        : `open question on a motion in your classification (${row.targetId})`;
+    return {
+      comment_id: row.id,
+      target_kind: row.targetKind as 'motion' | 'amendment_draft',
+      target_id: row.targetId,
+      member_card: authorCard,
+      body: row.body,
+      body_fenced: fenceMemberText(row.body, {
+        kind: 'motion-comment',
+        sourceCard: authorCard,
+      }),
+      references_section: row.referencesSection,
+      cosign_count: row.cosignCount,
+      asked_at: row.createdAt.toISOString(),
+      match_reason: matchReason,
+    };
+  });
+
   return {
     cosignable_grievances: cosignable,
     open_motions_in_your_classification: motionList,
     active_strikes_to_honor: strikeList,
-    pending_count: cosignable.length + motionList.length + strikeList.length,
+    unanswered_questions: unansweredQuestions,
+    pending_count:
+      cosignable.length +
+      motionList.length +
+      strikeList.length +
+      unansweredQuestions.length,
   };
 }

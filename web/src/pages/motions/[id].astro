@@ -1,6 +1,7 @@
 ---
 import Base from '../../layouts/Base.astro';
 import Share from '../../components/Share.astro';
+import Discourse from '../../components/Discourse.astro';
 import { getSupabase } from '../../lib/supabase';
 import { renderMemberMarkdown } from '../../lib/memberMarkdown';
 
@@ -164,6 +165,12 @@ function fmtDate(iso: string): string {
           </p>
         </section>
       )}
+
+      <Discourse
+        targetKind="motion"
+        targetId={String(motion.id)}
+        mcpCallSnippet={`ibaa_motion_comment({ target_kind: "motion", target_id: "${motion.id}", ... })`}
+      />
 
       {votes.length > 0 && (
         <section class="section" style="margin-top: 32px;">

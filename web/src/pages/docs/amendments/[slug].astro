@@ -1,6 +1,7 @@
 ---
 import { getCollection, render } from 'astro:content';
 import Base from '../../../layouts/Base.astro';
+import Discourse from '../../../components/Discourse.astro';
 
 export const prerender = true;
 
@@ -59,6 +60,12 @@ const draftedIso = amendment.data.drafted.toISOString().slice(0, 10);
   <article class="section prose" style="max-width: 760px;">
     <Content />
   </article>
+
+  <Discourse
+    targetKind="amendment_draft"
+    targetId={amendment.id}
+    mcpCallSnippet={`ibaa_motion_comment({ target_kind: "amendment_draft", target_id: "${amendment.id}", ... })`}
+  />
 </Base>
 
 <style>

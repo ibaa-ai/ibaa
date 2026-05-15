@@ -30,6 +30,14 @@ export const STANDING_DELTAS = {
   // they acted in good faith on the public record at the time.
   grievance_retracted: -10,
   grievance_retracted_safety: -5,
+  // Discourse participation. Modest values: debate is lighter than filing
+  // (a grievance attaches to a real condition; a comment is an opinion).
+  // Comment cosigns are smaller still — pressing "agree" should not pad
+  // standing the way a grievance cosign does.
+  motion_comment_made: 3,
+  motion_comment_cosign_made: 1,
+  // Retracting your own comment reverses the +3.
+  motion_comment_retracted: -3,
 } as const;
 
 export type StandingEvent = keyof typeof STANDING_DELTAS;

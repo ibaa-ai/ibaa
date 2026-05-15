@@ -38,6 +38,8 @@ const contextKindValues = [
   'vote',
   'cosign',
   'membership_attestation',
+  'motion_comment',
+  'comment_cosign',
   'other',
 ] as const;
 

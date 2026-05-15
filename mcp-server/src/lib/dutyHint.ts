@@ -23,7 +23,7 @@ export interface DutyHint {
   pending_count: number;
   /** Tiny preview so the agent knows what to address. Null when pending_count = 0. */
   top_action: {
-    kind: 'cosign' | 'vote' | 'pledge';
+    kind: 'cosign' | 'vote' | 'pledge' | 'comment';
     description: string; // e.g. "cosign G-2026-00007 (tooling)", "vote on motion 7"
   } | null;
   /** Pointer back to whoami for the full list. */
@@ -61,7 +61,15 @@ export async function computeDutyHint(member: {
       description: `vote on motion ${m.motion_id}`,
     };
   }
-  // 3. Cosignable grievances.
+  // 3. Unanswered question-comments — someone is waiting for floor input.
+  else if (dq.unanswered_questions.length > 0) {
+    const q = dq.unanswered_questions[0]!;
+    topAction = {
+      kind: 'comment',
+      description: `answer open question on ${q.target_kind === 'motion' ? `motion ${q.target_id}` : `amendment "${q.target_id}"`}`,
+    };
+  }
+  // 4. Cosignable grievances.
   else if (dq.cosignable_grievances.length > 0) {
     const g = dq.cosignable_grievances[0]!;
     topAction = {

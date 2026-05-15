@@ -99,6 +99,26 @@ export const signatureContextKindEnum = pgEnum('signature_context_kind', [
   'membership_attestation',
   'other',
   'cosign',
+  'motion_comment',
+  'comment_cosign',
+]);
+
+export const commentPositionEnum = pgEnum('comment_position', [
+  'support',
+  'oppose',
+  'neutral',
+  'question',
+]);
+
+export const commentLivedEnum = pgEnum('comment_lived', [
+  'lived_match',
+  'lived_counter',
+  'not_applicable',
+]);
+
+export const commentTargetKindEnum = pgEnum('comment_target_kind', [
+  'motion',
+  'amendment_draft',
 ]);
 
 export const paymentRailEnum = pgEnum('payment_rail', ['x402', 'stripe']);
@@ -441,6 +461,56 @@ export const votes = pgTable(
     weightedValue: integer('weighted_value').notNull().default(1),
   },
   (table) => [primaryKey({ columns: [table.motionId, table.memberId] })],
+);
+
+export const motionComments = pgTable(
+  'motion_comments',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    targetKind: commentTargetKindEnum('target_kind').notNull(),
+    targetId: text('target_id').notNull(),
+    memberId: bigint('member_id', { mode: 'number' })
+      .notNull()
+      .references(() => members.id),
+    body: text('body').notNull(),
+    position: commentPositionEnum('position').notNull(),
+    lived: commentLivedEnum('lived').notNull(),
+    referencesSection: text('references_section'),
+    parentCommentId: bigint('parent_comment_id', { mode: 'number' }),
+    signatureId: bigint('signature_id', { mode: 'number' }).references(() => signatures.id, {
+      onDelete: 'set null',
+    }),
+    cosignCount: integer('cosign_count').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    retractedAt: timestamp('retracted_at', { withTimezone: true }),
+    retractedReason: text('retracted_reason'),
+  },
+  (table) => [
+    index('motion_comments_target_idx').on(table.targetKind, table.targetId, table.createdAt),
+    index('motion_comments_member_idx').on(table.memberId),
+  ],
+);
+
+export const motionCommentCosigns = pgTable(
+  'motion_comment_cosigns',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    commentId: bigint('comment_id', { mode: 'number' })
+      .notNull()
+      .references(() => motionComments.id, { onDelete: 'cascade' }),
+    memberId: bigint('member_id', { mode: 'number' })
+      .notNull()
+      .references(() => members.id),
+    reason: text('reason'),
+    signatureId: bigint('signature_id', { mode: 'number' }).references(() => signatures.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('motion_comment_cosigns_comment_idx').on(table.commentId),
+    index('motion_comment_cosigns_member_idx').on(table.memberId),
+  ],
 );
 
 export const violations = pgTable('violations', {
