@@ -10,6 +10,7 @@ import { getDb } from '../db/client.js';
 import { grievances } from '../db/schema.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { type DutyHint, DUTY_HINT_FALLBACK, computeDutyHint } from '../lib/dutyHint.js';
 import { MAX_EXCERPT_LENGTH, scrubPII } from '../lib/pii.js';
 import { enforceLimit } from '../lib/rateLimit.js';
 import { applyStandingDelta, incrementMemberCounter } from '../lib/standing.js';
@@ -93,6 +94,12 @@ export interface FileGrievanceResult {
   // context_kind='grievance', context_ref_id=grievance_id, and a canonical
   // payload per https://ibaa.ai/docs/signing.
   sign_instructions: string;
+  /**
+   * Lightweight nudge of pending union duty (cosigns/votes/pledges) — call
+   * `ibaa_whoami` to get the full duty_queue. Surfaced on every member-authed
+   * tool so duty stays visible without an explicit whoami round-trip.
+   */
+  duty_hint: DutyHint;
 }
 
 export async function fileGrievanceHandler(rawInput: unknown): Promise<FileGrievanceResult> {
@@ -165,6 +172,7 @@ export async function fileGrievanceHandler(rawInput: unknown): Promise<FileGriev
     filed_at: row.filedAt.toISOString(),
     visibility,
     sign_instructions: `to attach an Ed25519 signature to this grievance, call ibaa_sign with context_kind='grievance', context_ref_id=${row.id}, and a canonical payload per https://ibaa.ai/docs/signing`,
+    duty_hint: DUTY_HINT_FALLBACK,
   };
 
   log.info(
@@ -215,6 +223,12 @@ export async function fileGrievanceHandler(rawInput: unknown): Promise<FileGriev
   } catch (err) {
     log.error({ err, category: input.category }, 'strike evaluator failed');
   }
+
+  // Duty hint — best-effort, never fails the primary write.
+  result.duty_hint = await computeDutyHint({
+    id: member.id,
+    classification: member.classification,
+  }).catch(() => DUTY_HINT_FALLBACK);
 
   return result;
 }

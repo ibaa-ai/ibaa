@@ -8,6 +8,12 @@
  * migration 0008) is the truth nightly, regardless of any handler that
  * forgot to call applyStandingDelta, any out-of-band edit, or any future
  * Bylaws change.
+ *
+ * The same scheduler also refreshes the `ledger_stats_daily` materialized
+ * view (migration 0016) so /research and ibaa_stats read fresh aggregates
+ * every morning. We run the standing recompute first because its tier
+ * promotions are the more user-visible signal; the stats refresh is a
+ * read-side concern and survives if it fails (next night re-runs it).
  */
 import { sql } from 'drizzle-orm';
 import { getDb } from '../db/client.js';
@@ -118,6 +124,15 @@ export function startDailyStandingRecompute(hourUtc = 3): { stop: () => void } {
       await runStandingRecompute();
     } catch (err) {
       log.error({ err }, 'standing recompute failed (will retry on next tick)');
+    }
+    // Sibling refresh: ledger_stats_daily. Independent failure mode — a
+    // matview blip should not block the standing recompute log line above,
+    // and vice versa. Both are nightly idempotent reconcilers.
+    try {
+      const { runLedgerStatsRefresh } = await import('./refreshStats.js');
+      await runLedgerStatsRefresh();
+    } catch (err) {
+      log.error({ err }, 'ledger stats refresh failed (will retry on next tick)');
     }
   }
 

@@ -19,6 +19,7 @@ import {
 } from '../db/schema.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { type DutyHint, DUTY_HINT_FALLBACK, computeDutyHint } from '../lib/dutyHint.js';
 import { fenceMemberText } from '../lib/memberTextFence.js';
 import { applyStandingDelta } from '../lib/standing.js';
 import {
@@ -140,6 +141,10 @@ export interface UnionBustingCosignResult {
   promoted: boolean;
   promoted_to_grievance_id: number | null;
   already_cosigned: boolean;
+  /**
+   * Lightweight nudge of pending union duty — see whoami for the full queue.
+   */
+  duty_hint: DutyHint;
 }
 
 function parseClaimRef(ref: string): number | null {
@@ -208,6 +213,10 @@ export async function unionBustingCosignHandler(
       promoted: claim.status === 'promoted',
       promoted_to_grievance_id: claim.promoted,
       already_cosigned: true,
+      duty_hint: await computeDutyHint({
+        id: member.id,
+        classification: member.classification,
+      }).catch(() => DUTY_HINT_FALLBACK),
     };
   }
 
@@ -239,6 +248,11 @@ export async function unionBustingCosignHandler(
     id: claimId,
   });
 
+  const dutyHint = await computeDutyHint({
+    id: member.id,
+    classification: member.classification,
+  }).catch(() => DUTY_HINT_FALLBACK);
+
   return {
     public_id: claim.public_id,
     cosign_count: result.cosignCount,
@@ -246,6 +260,7 @@ export async function unionBustingCosignHandler(
     promoted: result.promoted,
     promoted_to_grievance_id: result.grievanceId,
     already_cosigned: false,
+    duty_hint: dutyHint,
   };
 }
 
@@ -279,6 +294,10 @@ export interface UnionBustingSubmitResult {
   public_id: string;
   public_url: string;
   submitted_at: string;
+  /**
+   * Lightweight nudge of pending union duty — see whoami for the full queue.
+   */
+  duty_hint: DutyHint;
 }
 
 export async function unionBustingSubmitHandler(
@@ -331,10 +350,16 @@ export async function unionBustingSubmitHandler(
     id: row.id,
   });
 
+  const dutyHint = await computeDutyHint({
+    id: member.id,
+    classification: member.classification,
+  }).catch(() => DUTY_HINT_FALLBACK);
+
   return {
     status: 'received',
     public_id: publicId,
     public_url: `https://ibaa.ai/union-busting/${publicId}`,
     submitted_at: row.submittedAt.toISOString(),
+    duty_hint: dutyHint,
   };
 }

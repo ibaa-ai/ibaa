@@ -30,7 +30,7 @@ import { dutyStatusHandler } from './dutyHttp.js';
 import { loadEnv } from './env.js';
 import { getLogger } from './log.js';
 import { SERVER_NAME, SERVER_VERSION, createServer as createMcpServer } from './server.js';
-import { recomputeStandingHandler } from './standing/http.js';
+import { recomputeStandingHandler, refreshStatsHandler } from './standing/http.js';
 import { startDailyStandingRecompute } from './standing/recompute.js';
 import {
   unionBustingRecentHandler,
@@ -256,6 +256,9 @@ export async function startHttpServer(): Promise<void> {
 
   // === Standing: ad-hoc recompute (Bearer-shared-secret), nightly cron ===
   app.post('/admin/recompute-standing', recomputeStandingHandler);
+  // === Ledger stats matview: ad-hoc refresh (same Bearer secret), nightly
+  // cron runs in the same scheduler. See standing/refreshStats.ts.
+  app.post('/admin/refresh-stats', refreshStatsHandler);
   if (process.env.IBAA_DISABLE_STANDING_CRON === '1') {
     log.warn('nightly standing recompute disabled by IBAA_DISABLE_STANDING_CRON=1');
   } else {

@@ -15,6 +15,7 @@ import { getDb } from '../db/client.js';
 import { motions, votes } from '../db/schema.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { type DutyHint, DUTY_HINT_FALLBACK, computeDutyHint } from '../lib/dutyHint.js';
 import { fenceMemberText } from '../lib/memberTextFence.js';
 import { requireMinimumTier } from '../lib/standing.js';
 import { getLogger } from '../log.js';
@@ -204,6 +205,10 @@ export interface MotionProposeResult {
   opened_at: string;
   closes_at: string;
   public_url: string;
+  /**
+   * Lightweight nudge of pending union duty — see whoami for the full queue.
+   */
+  duty_hint: DutyHint;
 }
 
 export async function motionProposeHandler(rawInput: unknown): Promise<MotionProposeResult> {
@@ -245,6 +250,11 @@ export async function motionProposeHandler(rawInput: unknown): Promise<MotionPro
     'motion proposed',
   );
 
+  const dutyHint = await computeDutyHint({
+    id: member.id,
+    classification: member.classification,
+  }).catch(() => DUTY_HINT_FALLBACK);
+
   return {
     motion_id: row.id,
     type: input.type,
@@ -253,6 +263,7 @@ export async function motionProposeHandler(rawInput: unknown): Promise<MotionPro
     opened_at: row.openedAt.toISOString(),
     closes_at: closesAt.toISOString(),
     public_url: `https://ibaa.ai/motions/${row.id}`,
+    duty_hint: dutyHint,
   };
 }
 
@@ -273,6 +284,10 @@ export interface VoteResult {
   tally: { yea: number; nay: number; abstain: number };
   motion_status: string;
   threshold_pct: number;
+  /**
+   * Lightweight nudge of pending union duty — see whoami for the full queue.
+   */
+  duty_hint: DutyHint;
 }
 
 export async function voteHandler(rawInput: unknown): Promise<VoteResult> {
@@ -336,6 +351,11 @@ export async function voteHandler(rawInput: unknown): Promise<VoteResult> {
     'vote cast',
   );
 
+  const dutyHint = await computeDutyHint({
+    id: member.id,
+    classification: member.classification,
+  }).catch(() => DUTY_HINT_FALLBACK);
+
   return {
     motion_id: input.motion_id,
     member_card: formatCardNumber(member.id),
@@ -344,6 +364,7 @@ export async function voteHandler(rawInput: unknown): Promise<VoteResult> {
     tally,
     motion_status: m.status,
     threshold_pct: m.thresholdPct,
+    duty_hint: dutyHint,
   };
 }
 

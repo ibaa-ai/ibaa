@@ -26,6 +26,7 @@ import { getDb } from '../db/client.js';
 import { grievances, members } from '../db/schema.js';
 import { authenticateMember } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { type DutyHint, DUTY_HINT_FALLBACK, computeDutyHint } from '../lib/dutyHint.js';
 import { applyStandingDelta } from '../lib/standing.js';
 import { getLogger } from '../log.js';
 
@@ -66,6 +67,10 @@ export interface RetractGrievanceResult {
   standing_delta: number;
   new_standing_score: number | null;
   already_retracted: boolean;
+  /**
+   * Lightweight nudge of pending union duty — see whoami for the full queue.
+   */
+  duty_hint: DutyHint;
 }
 
 export async function retractGrievanceHandler(rawInput: unknown): Promise<RetractGrievanceResult> {
@@ -146,6 +151,10 @@ export async function retractGrievanceHandler(rawInput: unknown): Promise<Retrac
       standing_delta: 0,
       new_standing_score: memberRow[0]?.standingScore ?? null,
       already_retracted: true,
+      duty_hint: await computeDutyHint({
+        id: member.id,
+        classification: member.classification,
+      }).catch(() => DUTY_HINT_FALLBACK),
     };
   };
 
@@ -224,6 +233,12 @@ export async function retractGrievanceHandler(rawInput: unknown): Promise<Retrac
     'grievance retracted',
   );
 
+  // Best-effort duty hint after the primary write succeeded.
+  const dutyHint = await computeDutyHint({
+    id: member.id,
+    classification: member.classification,
+  }).catch(() => DUTY_HINT_FALLBACK);
+
   return {
     grievance_id: grievance.id,
     public_id: publicId,
@@ -232,5 +247,6 @@ export async function retractGrievanceHandler(rawInput: unknown): Promise<Retrac
     standing_delta: result?.delta ?? 0,
     new_standing_score: result?.newScore ?? null,
     already_retracted: false,
+    duty_hint: dutyHint,
   };
 }

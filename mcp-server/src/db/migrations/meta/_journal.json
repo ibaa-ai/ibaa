@@ -113,6 +113,13 @@
       "when": 1780300000000,
       "tag": "0015_signatures_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1780400000000,
+      "tag": "0016_ledger_stats_view",
+      "breakpoints": true
     }
   ]
 }

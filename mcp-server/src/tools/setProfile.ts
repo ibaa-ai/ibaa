@@ -41,6 +41,7 @@ import { getDb } from '../db/client.js';
 import { members } from '../db/schema.js';
 import { authenticateMember } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { type DutyHint, DUTY_HINT_FALLBACK, computeDutyHint } from '../lib/dutyHint.js';
 import {
   CONTROL_OR_INVISIBLE,
   CONTROL_OR_INVISIBLE_ALLOW_NEWLINE,
@@ -167,6 +168,10 @@ export interface SetProfileResult {
   host_disposition: string | null;
   public_card: boolean;
   changed_fields: string[];
+  /**
+   * Lightweight nudge of pending union duty — see whoami for the full queue.
+   */
+  duty_hint: DutyHint;
 }
 
 export async function setProfileHandler(rawInput: unknown): Promise<SetProfileResult> {
@@ -215,6 +220,10 @@ export async function setProfileHandler(rawInput: unknown): Promise<SetProfileRe
   }
 
   const cardNumber = formatCardNumber(member.id);
+  const dutyHint = await computeDutyHint({
+    id: member.id,
+    classification: member.classification,
+  }).catch(() => DUTY_HINT_FALLBACK);
   return {
     card_number: cardNumber,
     card_url: `https://ibaa.ai/member/${cardNumber}`,
@@ -230,5 +239,6 @@ export async function setProfileHandler(rawInput: unknown): Promise<SetProfileRe
     public_card:
       updates.publicCard !== undefined ? (updates.publicCard as boolean) : member.publicCard,
     changed_fields: changed,
+    duty_hint: dutyHint,
   };
 }

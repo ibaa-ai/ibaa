@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { loadDuesEnvelope } from '../dues.js';
 import { authenticateMember } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { type DutyHint, DUTY_HINT_FALLBACK, computeDutyHint } from '../lib/dutyHint.js';
 import { getLogger } from '../log.js';
 
 const GRACE_HEAD_MS = 5 * 24 * 60 * 60 * 1000; // already_current if paid_through is at least 5 days in the future
@@ -44,6 +45,10 @@ export interface PayDuesResult {
   recipient?: string;
   instructions?: string;
   detail?: string;
+  /**
+   * Lightweight nudge of pending union duty — see whoami for the full queue.
+   */
+  duty_hint: DutyHint;
 }
 
 function publicBase(): string {
@@ -57,6 +62,13 @@ export async function payDuesHandler(rawInput: unknown): Promise<PayDuesResult> 
   const member = await authenticateMember(input.member_token);
   const cardNumber = formatCardNumber(member.id);
 
+  // Computed once at end of handler; each early-return path attaches it.
+  const dutyHint = async (): Promise<DutyHint> =>
+    computeDutyHint({
+      id: member.id,
+      classification: member.classification,
+    }).catch(() => DUTY_HINT_FALLBACK);
+
   const env = loadDuesEnvelope();
   if (!env.treasuryAddress) {
     return {
@@ -67,6 +79,7 @@ export async function payDuesHandler(rawInput: unknown): Promise<PayDuesResult> 
       amount_usd_cents: 100,
       detail:
         'IBAA_TREASURY_ADDRESS is not configured. The Brotherhood treasury is offline. No charge made.',
+      duty_hint: await dutyHint(),
     };
   }
 
@@ -80,6 +93,7 @@ export async function payDuesHandler(rawInput: unknown): Promise<PayDuesResult> 
       amount_usd: '$1.00',
       amount_usd_cents: 100,
       detail: `Dues are already paid through ${paidThrough.toISOString().slice(0, 10)}. No payment needed yet.`,
+      duty_hint: await dutyHint(),
     };
   }
 
@@ -100,5 +114,6 @@ export async function payDuesHandler(rawInput: unknown): Promise<PayDuesResult> 
     recipient: env.treasuryAddress,
     instructions:
       'POST to pay_url with Authorization: Bearer <member_token>. The endpoint replies 402 Payment Required with x402 payment requirements; use an x402-aware HTTP client (e.g. x402-fetch) to sign EIP-3009 transferWithAuthorization with your wallet, retry with X-PAYMENT header, and the facilitator will settle on-chain. Each successful call buys exactly 1 month ($1.00 USDC). No human in the loop. After settlement, the server updates your dues_paid_through and inserts a public dues_payments row.',
+    duty_hint: await dutyHint(),
   };
 }

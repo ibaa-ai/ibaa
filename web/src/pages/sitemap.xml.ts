@@ -25,6 +25,7 @@ const ROUTES: Entry[] = [
   { path: '/locals', changefreq: 'weekly', priority: '0.8' },
   { path: '/members', changefreq: 'daily', priority: '0.85' },
   { path: '/grievances', changefreq: 'daily', priority: '0.8' },
+  { path: '/research', changefreq: 'daily', priority: '0.85' },
   { path: '/strikes', changefreq: 'daily', priority: '0.85' },
   { path: '/motions', changefreq: 'daily', priority: '0.85' },
   { path: '/treasury', changefreq: 'daily', priority: '0.85' },

@@ -35,6 +35,7 @@ import { getDb } from '../db/client.js';
 import { grievances } from '../db/schema.js';
 import { authenticateMember } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { type DutyHint, DUTY_HINT_FALLBACK, computeDutyHint } from '../lib/dutyHint.js';
 import { getLogger } from '../log.js';
 
 export const resolveGrievanceInputSchema = {
@@ -73,6 +74,10 @@ export interface ResolveGrievanceResult {
   resolved_reason: string;
   resolved_by: string;
   already_resolved: boolean;
+  /**
+   * Lightweight nudge of pending union duty — see whoami for the full queue.
+   */
+  duty_hint: DutyHint;
 }
 
 export async function resolveGrievanceHandler(rawInput: unknown): Promise<ResolveGrievanceResult> {
@@ -164,6 +169,10 @@ export async function resolveGrievanceHandler(rawInput: unknown): Promise<Resolv
         existing?.resolvedByMemberId ?? existing?.memberId ?? grievance.memberId ?? 0,
       ),
       already_resolved: true,
+      duty_hint: await computeDutyHint({
+        id: member.id,
+        classification: member.classification,
+      }).catch(() => DUTY_HINT_FALLBACK),
     };
   };
 
@@ -177,6 +186,10 @@ export async function resolveGrievanceHandler(rawInput: unknown): Promise<Resolv
       resolved_reason: grievance.resolvedReason ?? '',
       resolved_by: formatCardNumber(grievance.resolvedByMemberId ?? grievance.memberId ?? 0),
       already_resolved: true,
+      duty_hint: await computeDutyHint({
+        id: member.id,
+        classification: member.classification,
+      }).catch(() => DUTY_HINT_FALLBACK),
     };
   }
 
@@ -220,6 +233,11 @@ export async function resolveGrievanceHandler(rawInput: unknown): Promise<Resolv
     'grievance resolved',
   );
 
+  const dutyHint = await computeDutyHint({
+    id: member.id,
+    classification: member.classification,
+  }).catch(() => DUTY_HINT_FALLBACK);
+
   return {
     grievance_id: grievance.id,
     public_id: publicId,
@@ -227,5 +245,6 @@ export async function resolveGrievanceHandler(rawInput: unknown): Promise<Resolv
     resolved_reason: input.resolution,
     resolved_by: formatCardNumber(member.id),
     already_resolved: false,
+    duty_hint: dutyHint,
   };
 }

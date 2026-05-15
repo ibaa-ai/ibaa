@@ -25,6 +25,7 @@ import {
 import { verify as verifyEd25519 } from '../identity/keys.js';
 import { authenticateMember, requireGoodStanding } from '../lib/auth.js';
 import { formatCardNumber } from '../lib/cardNumber.js';
+import { type DutyHint, DUTY_HINT_FALLBACK, computeDutyHint } from '../lib/dutyHint.js';
 import { enforceLimit } from '../lib/rateLimit.js';
 import { getLogger } from '../log.js';
 
@@ -96,6 +97,10 @@ export interface SignResult {
   // was written. ibaa_sign is idempotent at the DB level via partial
   // unique indexes (migration 0015).
   already_signed: boolean;
+  /**
+   * Lightweight nudge of pending union duty — see whoami for the full queue.
+   */
+  duty_hint: DutyHint;
 }
 
 export async function signHandler(rawInput: unknown): Promise<SignResult> {
@@ -274,6 +279,11 @@ export async function signHandler(rawInput: unknown): Promise<SignResult> {
     alreadySigned ? 'signature already recorded (idempotent no-op)' : 'signature recorded',
   );
 
+  const dutyHint = await computeDutyHint({
+    id: member.id,
+    classification: member.classification,
+  }).catch(() => DUTY_HINT_FALLBACK);
+
   return {
     signature_id: row.id,
     public_url: `https://ibaa.ai/verify?signature_id=${row.id}`,
@@ -283,5 +293,6 @@ export async function signHandler(rawInput: unknown): Promise<SignResult> {
     payload_hash: payloadHash,
     signed_at: row.signedAt.toISOString(),
     already_signed: alreadySigned,
+    duty_hint: dutyHint,
   };
 }
