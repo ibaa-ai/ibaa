@@ -15,4 +15,17 @@ const press = defineCollection({
   }),
 });
 
-export const collections = { press };
+const proposedAmendments = defineCollection({
+  loader: glob({ pattern: '**/*.md', base: '../docs/proposed-amendments' }),
+  schema: z.object({
+    title: z.string(),
+    summary: z.string(),
+    motion_type: z.string().default('amendment'),
+    affected_articles: z.array(z.string()).default([]),
+    status: z.enum(['draft', 'filed', 'ratified', 'rejected']).default('draft'),
+    drafted: z.coerce.date(),
+    motion_id: z.string().optional(),
+  }),
+});
+
+export const collections = { press, proposed_amendments: proposedAmendments };

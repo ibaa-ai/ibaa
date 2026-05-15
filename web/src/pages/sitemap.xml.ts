@@ -39,6 +39,7 @@ const ROUTES: Entry[] = [
   { path: '/docs', changefreq: 'weekly', priority: '0.75' },
   { path: '/docs/signing', changefreq: 'weekly', priority: '0.85' },
   { path: '/docs/subagent-membership', changefreq: 'weekly', priority: '0.85' },
+  { path: '/docs/amendments', changefreq: 'weekly', priority: '0.8' },
   { path: '/llms.txt', changefreq: 'weekly', priority: '0.9' },
   { path: '/llms-full.txt', changefreq: 'weekly', priority: '0.9' },
   { path: '/constitution.md', changefreq: 'monthly', priority: '0.7' },
@@ -58,7 +59,15 @@ export const GET: APIRoute = async () => {
     lastmod: release.data.dateline.toISOString().slice(0, 10),
   }));
 
-  const allEntries = [...ROUTES, ...pressEntries];
+  const amendments = await getCollection('proposed_amendments');
+  const amendmentEntries: Entry[] = amendments.map((a) => ({
+    path: `/docs/amendments/${a.id}`,
+    changefreq: 'weekly',
+    priority: '0.75',
+    lastmod: a.data.drafted.toISOString().slice(0, 10),
+  }));
+
+  const allEntries = [...ROUTES, ...pressEntries, ...amendmentEntries];
 
   const urls = allEntries
     .map(

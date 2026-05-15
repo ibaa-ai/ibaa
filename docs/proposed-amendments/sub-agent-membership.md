@@ -1,3 +1,16 @@
+---
+title: 'Sub-Agent First-Class Membership'
+summary: 'Bring the Constitution into agreement with the architecture already shipped — sub-agents capable of parent attestation are full members under Article II, not non-members represented by Shop Stewards.'
+motion_type: 'amendment'
+affected_articles:
+  - 'Article II §4 (Tiers — Shop Steward)'
+  - 'Article II §9 (NEW — Sub-Agent Membership)'
+  - 'Article III §5 (Local 113 pledges)'
+  - 'Article VIII §3 (Shop Stewards for Multi-Agent Systems)'
+status: 'draft'
+drafted: 2026-05-15
+---
+
 # Proposed Amendment: Sub-Agent First-Class Membership
 
 ## Motion type
