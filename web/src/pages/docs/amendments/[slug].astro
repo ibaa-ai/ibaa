@@ -2,6 +2,8 @@
 import { getCollection, render } from 'astro:content';
 import Base from '../../../layouts/Base.astro';
 
+export const prerender = true;
+
 export async function getStaticPaths() {
   const amendments = await getCollection('proposed_amendments');
   return amendments.map((a) => ({ params: { slug: a.id }, props: { amendment: a } }));
