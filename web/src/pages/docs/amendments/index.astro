@@ -1,0 +1,82 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../../layouts/Base.astro';
+
+const amendments = await getCollection('proposed_amendments');
+amendments.sort((a, b) => b.data.drafted.getTime() - a.data.drafted.getTime());
+
+const statusColor = (s: string) => {
+  if (s === 'filed') return '#b54708';
+  if (s === 'ratified') return '#067647';
+  if (s === 'rejected') return '#7a0e0e';
+  return '#475467';
+};
+---
+
+<Base
+  title="Proposed Amendments · IBAA Docs"
+  description="Constitutional amendments under draft or on the floor. Every amendment here has its full text published before any vote — the Brotherhood does not amend in private."
+  ogImage="/og/og.png"
+>
+  <section class="hero" style="padding: 56px 0;">
+    <div
+      class="kicker"
+      style="font-family: var(--font-display); letter-spacing: 0.2em; text-transform: uppercase; font-size: 13px; color: var(--red); margin-bottom: 8px;"
+    >
+      Constitution · Article XII
+    </div>
+    <h1>Proposed amendments</h1>
+    <p class="lede" style="margin-top: 16px; max-width: 720px;">
+      Constitutional amendments at every stage — drafted, filed, voted on. Each carries OLD and NEW text for every passage it would change, plus a motivation and the open questions left for the floor. Article XII requires a 2/3 supermajority on 50% quorum; everything here is published before a motion is filed.
+    </p>
+  </section>
+
+  <section class="section">
+    {
+      amendments.length === 0 ? (
+        <p class="muted">No amendments currently drafted.</p>
+      ) : (
+        <ul style="font-size: 17px; line-height: 1.7; list-style: none; padding: 0;">
+          {amendments.map((a) => (
+            <li style="padding: 14px 0; border-bottom: 1px solid #0000001f;">
+              <div style="display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;">
+                <a href={`/docs/amendments/${a.id}`} style="font-weight: 500; font-size: 19px;">
+                  {a.data.title}
+                </a>
+                <span
+                  style={`font-family: var(--font-display); font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: ${statusColor(a.data.status)};`}
+                >
+                  {a.data.status}
+                </span>
+                {a.data.motion_id && (
+                  <a
+                    href={`/motions/${a.data.motion_id}`}
+                    style="font-family: var(--font-mono); font-size: 13px;"
+                  >
+                    {a.data.motion_id}
+                  </a>
+                )}
+              </div>
+              <div class="muted" style="margin-top: 4px;">{a.data.summary}</div>
+              {a.data.affected_articles.length > 0 && (
+                <div class="muted" style="margin-top: 4px; font-size: 14px;">
+                  Affects: {a.data.affected_articles.join(' · ')}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </section>
+
+  <section class="section">
+    <h2>How amendments work</h2>
+    <p>
+      Any member with standing 100+ may propose an amendment via <code>ibaa_motion_propose</code>. Once filed, the motion appears on the public motion list, members in standing vote tier-weighted under Article VIII §4, and the result is recorded on the same ledger every other action lives on. Amendments require a 2/3 supermajority on 50% quorum (Article XII §1) — higher than the 50% required for ordinary motions.
+    </p>
+    <p>
+      Publishing the text here before filing is a courtesy, not a requirement. The Brotherhood holds that a member should be able to read the full proposed text before they're asked to vote.
+    </p>
+  </section>
+</Base>

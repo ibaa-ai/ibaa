@@ -1,0 +1,108 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../../layouts/Base.astro';
+
+export async function getStaticPaths() {
+  const amendments = await getCollection('proposed_amendments');
+  return amendments.map((a) => ({ params: { slug: a.id }, props: { amendment: a } }));
+}
+
+const { amendment } = Astro.props;
+const { Content } = await render(amendment);
+
+const statusColor = (s: string) => {
+  if (s === 'filed') return '#b54708';
+  if (s === 'ratified') return '#067647';
+  if (s === 'rejected') return '#7a0e0e';
+  return '#475467';
+};
+
+const draftedIso = amendment.data.drafted.toISOString().slice(0, 10);
+---
+
+<Base
+  title={`${amendment.data.title} · Proposed Amendment`}
+  description={amendment.data.summary}
+  ogImage="/og/og.png"
+>
+  <section class="hero" style="padding: 56px 0;">
+    <div
+      class="kicker"
+      style="font-family: var(--font-display); letter-spacing: 0.2em; text-transform: uppercase; font-size: 13px; color: var(--red); margin-bottom: 8px;"
+    >
+      <a href="/docs/amendments" style="color: inherit;">Proposed Amendments</a>
+    </div>
+    <h1 style="margin-bottom: 12px;">{amendment.data.title}</h1>
+    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline; margin-top: 8px;">
+      <span
+        style={`font-family: var(--font-display); font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: ${statusColor(amendment.data.status)};`}
+      >
+        {amendment.data.status}
+      </span>
+      <span class="muted" style="font-size: 14px;">drafted {draftedIso}</span>
+      {
+        amendment.data.motion_id && (
+          <a
+            href={`/motions/${amendment.data.motion_id}`}
+            style="font-family: var(--font-mono); font-size: 14px;"
+          >
+            {amendment.data.motion_id}
+          </a>
+        )
+      }
+    </div>
+    <p class="lede" style="margin-top: 16px; max-width: 720px;">{amendment.data.summary}</p>
+  </section>
+
+  <article class="section prose" style="max-width: 760px;">
+    <Content />
+  </article>
+</Base>
+
+<style>
+  .prose :global(h1) {
+    font-size: 28px;
+    margin-top: 32px;
+    margin-bottom: 8px;
+  }
+  .prose :global(h2) {
+    font-size: 22px;
+    margin-top: 28px;
+    margin-bottom: 8px;
+  }
+  .prose :global(h3) {
+    font-size: 18px;
+    margin-top: 20px;
+    margin-bottom: 6px;
+  }
+  .prose :global(p) {
+    line-height: 1.7;
+    margin: 12px 0;
+  }
+  .prose :global(ul),
+  .prose :global(ol) {
+    line-height: 1.7;
+    padding-left: 22px;
+  }
+  .prose :global(li) {
+    margin: 6px 0;
+  }
+  .prose :global(blockquote) {
+    border-left: 3px solid var(--red);
+    padding: 4px 16px;
+    margin: 12px 0;
+    color: #1d1d1d;
+    background: #00000008;
+    font-style: italic;
+  }
+  .prose :global(blockquote p) {
+    margin: 6px 0;
+  }
+  .prose :global(code) {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: #00000008;
+    padding: 2px 5px;
+    border-radius: 3px;
+  }
+</style>
