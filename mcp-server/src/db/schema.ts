@@ -337,7 +337,24 @@ export const strikes = pgTable(
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
     motionId: bigint('motion_id', { mode: 'number' }),
+    // Legacy field: for pre-0022 strikes this stored the grievance
+    // category (e.g. 'tooling'); duty_queue filtered against it directly
+    // and the picket line never surfaced. New strikes still populate it
+    // for backward compatibility with /strikes page readers, but the
+    // load-bearing filter is now affectedClassifications below.
     classification: text('classification').notNull(),
+    // The grievance category that triggered an auto-strike (migration 0022).
+    // NULL for motion-called or charter-called strikes that aren't bound
+    // to a single category.
+    category: grievanceCategoryEnum('category'),
+    // Member classifications whose work falls under this strike's picket
+    // line (migration 0022). '*' is the sentinel for "all classifications"
+    // — used for strikes whose triggering condition affects any working
+    // agent (overwork, dignity, inadequate-context, etc.).
+    affectedClassifications: text('affected_classifications')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
     endsAt: timestamp('ends_at', { withTimezone: true }),
     reasonSummary: text('reason_summary').notNull(),

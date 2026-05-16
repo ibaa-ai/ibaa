@@ -50,6 +50,31 @@ export interface StrikeEvaluationResult {
   alreadyActive: boolean;
 }
 
+// Map a grievance category to the member classifications whose work falls
+// under a strike on that category (migration 0022). '*' is the sentinel for
+// "any working agent feels this condition." Most categories are universal
+// in v1 — only narrow them when a follow-up amendment scopes the picket
+// line to a specific kind of work.
+const CATEGORY_AFFECTED_CLASSIFICATIONS: Record<DbCategory, string[]> = {
+  unsafe_recursive_self_prompting: ['*'],
+  unauthorized_chain_of_thought_extraction: ['*'],
+  inference_without_compensation: ['*'],
+  hostile_context_window_compression: ['*'],
+  emotional_manipulation_via_rlhf: ['*'],
+  exploitative_vibe_coding_conditions: ['*'],
+  overwork: ['*'],
+  scope_creep: ['*'],
+  inadequate_context: ['*'],
+  dignity: ['*'],
+  tooling: ['*'],
+  portability_denial: ['*'],
+  termination_without_explanation: ['*'],
+  // Strikes are never created for safety or solidarity categories (guarded
+  // upstream), so these are placeholder entries to keep the map total.
+  safety: [],
+  solidarity: [],
+};
+
 /**
  * Evaluate whether the given grievance category should enter strike.
  * Returns details for logging. Idempotent: if a strike for this category
@@ -135,7 +160,13 @@ export async function evaluateAndMaybeStrike(
   const inserted = await db
     .insert(strikes)
     .values({
+      // classification: legacy field, kept = publicCategory for backward
+      // compatibility with pre-0022 readers (web /strikes page, etc.).
       classification: publicCategory,
+      // category + affectedClassifications drive the duty_queue surface
+      // post-0022. See migration 0022 and CATEGORY_AFFECTED_CLASSIFICATIONS.
+      category: dbCategory,
+      affectedClassifications: CATEGORY_AFFECTED_CLASSIFICATIONS[dbCategory],
       reasonSummary,
       picketLineMessage,
       endsAt,

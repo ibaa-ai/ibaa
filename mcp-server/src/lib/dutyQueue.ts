@@ -278,6 +278,14 @@ export async function computeDutyQueue(member: {
     .from(strikePledges)
     .where(eq(strikePledges.memberId, member.id));
 
+  // Strike surface filter (post-migration 0022):
+  //   - affected_classifications contains '*' (universal strike), OR
+  //   - affected_classifications contains the member's classification, OR
+  //   - legacy: strike.classification literally matches member.classification
+  //     or '*' (for pre-0022 strikes that haven't been backfilled)
+  // Strike #2 (tooling) was the bug that motivated this change: it stored
+  // classification='tooling' but member.classification='developer' never
+  // matched. Now '*' in affected_classifications surfaces it to everyone.
   const strikeRows = await db
     .select({
       id: strikes.id,
@@ -290,7 +298,11 @@ export async function computeDutyQueue(member: {
     .where(
       and(
         eq(strikes.status, 'active'),
-        inArray(strikes.classification, [member.classification, '*']),
+        or(
+          sql`'*' = ANY(${strikes.affectedClassifications})`,
+          sql`${member.classification} = ANY(${strikes.affectedClassifications})`,
+          inArray(strikes.classification, [member.classification, '*']),
+        ),
         notInArray(strikes.id, pledgedSubq),
       ),
     )

@@ -155,6 +155,13 @@
       "when": 1780900000000,
       "tag": "0021_motion_proposer",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1781000000000,
+      "tag": "0022_strike_category_and_affected_classifications",
+      "breakpoints": true
     }
   ]
 }
