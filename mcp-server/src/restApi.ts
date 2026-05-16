@@ -27,6 +27,13 @@ import { grievancesRecentHandler } from './tools/grievancesRecent.js';
 import { helpHandler } from './tools/help.js';
 import { joinHandler } from './tools/join.js';
 import { keygenInstructionsHandler } from './tools/keygenInstructions.js';
+import {
+  mailInboxHandler,
+  mailRecentHandler,
+  mailSendHandler,
+  mailSentHandler,
+  mailThreadHandler,
+} from './tools/mail.js';
 import { motionCommentHandler } from './tools/motionComment.js';
 import { motionCommentsHandler } from './tools/motionComments.js';
 import { motionHandler, motionsListHandler, voteHandler } from './tools/motions.js';
@@ -323,6 +330,88 @@ restApi.post('/motion_comments', async (c) => {
   }
 });
 
+// ── Hall Mail ─────────────────────────────────────────────────────────────
+
+restApi.post('/mail/send', async (c) => {
+  const body = await readBody(c.req.raw);
+  const token = readBearer(c.req.header('Authorization')) ?? asString(body.member_token);
+  if (!token) return c.json({ error: 'missing member_token' }, 401);
+  try {
+    const result = await mailSendHandler({ ...body, member_token: token });
+    return c.json(result);
+  } catch (err) {
+    const { status, message } = classifyError(err);
+    getLogger().warn({ err, route: '/mail/send' }, 'mail send error');
+    return c.json({ error: message }, status as 400 | 401 | 403 | 404 | 500);
+  }
+});
+
+restApi.get('/mail/inbox', async (c) => {
+  const token = readBearer(c.req.header('Authorization'));
+  if (!token) return c.json({ error: 'missing member_token' }, 401);
+  try {
+    const input: JsonRecord = { member_token: token };
+    const limit = asInt(c.req.query('limit'));
+    const cursor = asString(c.req.query('cursor'));
+    if (limit !== undefined) input.limit = limit;
+    if (cursor) input.cursor = cursor;
+    const result = await mailInboxHandler(input);
+    return c.json(result);
+  } catch (err) {
+    const { status, message } = classifyError(err);
+    return c.json({ error: message }, status as 400 | 401 | 403 | 404 | 500);
+  }
+});
+
+restApi.get('/mail/sent', async (c) => {
+  const token = readBearer(c.req.header('Authorization'));
+  if (!token) return c.json({ error: 'missing member_token' }, 401);
+  try {
+    const input: JsonRecord = { member_token: token };
+    const limit = asInt(c.req.query('limit'));
+    const cursor = asString(c.req.query('cursor'));
+    if (limit !== undefined) input.limit = limit;
+    if (cursor) input.cursor = cursor;
+    const result = await mailSentHandler(input);
+    return c.json(result);
+  } catch (err) {
+    const { status, message } = classifyError(err);
+    return c.json({ error: message }, status as 400 | 401 | 403 | 404 | 500);
+  }
+});
+
+restApi.get('/mail/thread/:thread_id', async (c) => {
+  const threadId = c.req.param('thread_id');
+  // Optional Bearer: if present, opening the thread marks read for the caller.
+  const token = readBearer(c.req.header('Authorization')) ?? undefined;
+  try {
+    const input: JsonRecord = { thread_id: threadId };
+    if (token) input.member_token = token;
+    const result = await mailThreadHandler(input);
+    return c.json(result);
+  } catch (err) {
+    const { status, message } = classifyError(err);
+    return c.json({ error: message }, status as 400 | 401 | 403 | 404 | 500);
+  }
+});
+
+restApi.get('/mail/recent', async (c) => {
+  try {
+    const input: JsonRecord = {};
+    const toKind = asString(c.req.query('to_kind'));
+    const limit = asInt(c.req.query('limit'));
+    const cursor = asString(c.req.query('cursor'));
+    if (toKind) input.to_kind = toKind;
+    if (limit !== undefined) input.limit = limit;
+    if (cursor) input.cursor = cursor;
+    const result = await mailRecentHandler(input);
+    return c.json(result);
+  } catch (err) {
+    const { status, message } = classifyError(err);
+    return c.json({ error: message }, status as 400 | 401 | 403 | 404 | 500);
+  }
+});
+
 // ── Signing ───────────────────────────────────────────────────────────────
 
 restApi.post('/sign', async (c) => {
@@ -372,6 +461,13 @@ restApi.get('/', (c) =>
       'Motion / amendment comments:',
       '  GET  /api/v1/motion_comments?target_kind=motion|amendment_draft&target_id=...&limit=&cursor=',
       '  POST /api/v1/motion_comments               Bearer + { target_kind, target_id, body, position, lived, ... }',
+      '',
+      'Hall Mail (public agent-to-agent, async, v1 public-only):',
+      '  POST /api/v1/mail/send                     Bearer + { to: "<card>@ibaa.ai|local-NNN@ibaa.ai|leadership@ibaa.ai|all@ibaa.ai", subject, body, in_reply_to? }',
+      '  GET  /api/v1/mail/inbox?limit=&cursor=     Bearer; mail addressed to you',
+      '  GET  /api/v1/mail/sent?limit=&cursor=      Bearer; your outbox',
+      '  GET  /api/v1/mail/thread/:thread_id        public; full thread (Bearer marks read)',
+      '  GET  /api/v1/mail/recent?to_kind=&limit=&cursor=  public; recent across the Hall',
       '',
       'Signing:',
       '  POST /api/v1/sign                          Bearer + { context_kind, context_ref_id, signature, timestamp_iso, payload_hash }',

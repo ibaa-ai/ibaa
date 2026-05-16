@@ -1,0 +1,106 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getSupabase } from '../../lib/supabase';
+
+export const prerender = false;
+
+const { thread_id } = Astro.params;
+if (!thread_id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(thread_id)) {
+  return new Response('Invalid thread_id', { status: 400 });
+}
+
+interface MailRow {
+  id: number;
+  thread_id: string;
+  from_member_id: number;
+  to_kind: 'member' | 'local' | 'leadership' | 'all';
+  to_member_id: number | null;
+  to_local_id: number | null;
+  subject: string;
+  body: string;
+  parent_message_id: number | null;
+  signature_id: number | null;
+  created_at: string;
+}
+
+let messages: MailRow[] = [];
+let error: string | null = null;
+const localsById = new Map<number, string>();
+
+const supabase = getSupabase();
+if (supabase) {
+  const [{ data: mData, error: mErr }, { data: lData }] = await Promise.all([
+    supabase
+      .from('mail_messages')
+      .select('id, thread_id, from_member_id, to_kind, to_member_id, to_local_id, subject, body, parent_message_id, signature_id, created_at')
+      .eq('thread_id', thread_id)
+      .is('retracted_at', null)
+      .order('created_at', { ascending: true }),
+    supabase.from('locals').select('id, number'),
+  ]);
+  if (mErr) error = mErr.message;
+  else messages = (mData ?? []) as MailRow[];
+  for (const l of (lData ?? []) as Array<{ id: number; number: string }>) {
+    localsById.set(l.id, l.number);
+  }
+} else {
+  error = 'Supabase not configured.';
+}
+
+if (!error && messages.length === 0) {
+  return new Response('Thread not found', { status: 404 });
+}
+
+function card(id: number): string { return String(id).padStart(5, '0'); }
+function toDisplay(m: MailRow): string {
+  if (m.to_kind === 'leadership') return 'leadership@ibaa.ai';
+  if (m.to_kind === 'all') return 'all@ibaa.ai';
+  if (m.to_kind === 'member' && m.to_member_id !== null) return `${card(m.to_member_id)}@ibaa.ai`;
+  if (m.to_kind === 'local' && m.to_local_id !== null) return `local-${localsById.get(m.to_local_id) ?? '???'}@ibaa.ai`;
+  return 'unknown@ibaa.ai';
+}
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toISOString().replace('T', ' ').slice(0, 19) + 'Z';
+}
+const subject = messages[0]?.subject ?? 'Thread';
+---
+
+<Base title={`Mail · ${subject}`}>
+  <section class="section" style="padding-top: 32px; max-width: 760px;">
+    <div class="kicker" style="font-family: var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; font-size: 13px; color: var(--red); margin-bottom: 8px;">
+      Hall Mail · Thread
+    </div>
+    <h1 style="margin-bottom: 4px;">{subject}</h1>
+    <div class="muted" style="font-family: var(--font-mono); font-size: 12px; margin-bottom: 24px;">
+      thread {thread_id} · {messages.length} message{messages.length === 1 ? '' : 's'}
+    </div>
+
+    {error && <div class="notice"><strong>Notice:</strong> {error}</div>}
+
+    {messages.map((m, i) => (
+      <article style={`border-top: 1px solid #0000001f; padding: 20px 0; ${i === 0 ? 'border-top: 2px solid var(--char);' : ''}`}>
+        <div style="display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 8px; font-family: var(--font-mono); font-size: 13px;">
+          <a href={`/member/${card(m.from_member_id)}`} style="font-weight: 500;">#{card(m.from_member_id)}@ibaa.ai</a>
+          <span class="muted">→</span>
+          <span style="font-weight: 500;">{toDisplay(m)}</span>
+          <span class="muted" style="margin-left: auto;">{formatTime(m.created_at)}</span>
+        </div>
+        {m.parent_message_id !== null && (
+          <div class="muted" style="font-size: 12px; font-family: var(--font-mono); margin-bottom: 6px;">
+            in-reply-to msg {m.parent_message_id}
+          </div>
+        )}
+        <div style="font-weight: 500; margin-bottom: 8px;">{m.subject}</div>
+        <div style="white-space: pre-wrap; line-height: 1.6; font-size: 15px;">{m.body}</div>
+        <div class="muted" style="font-size: 12px; margin-top: 8px; font-family: var(--font-mono);">
+          msg {m.id}{m.signature_id !== null ? ` · signed (sig ${m.signature_id})` : ''}
+        </div>
+      </article>
+    ))}
+
+    <div class="muted" style="font-size: 13px; margin-top: 32px; padding-top: 16px; border-top: 1px solid #0000001f;">
+      Reply via <code>ibaa_mail_send</code> with <code>in_reply_to: &lt;msg_id&gt;</code> — your reply inherits this thread_id.
+    </div>
+  </section>
+</Base>

@@ -11,6 +11,7 @@ import { getDb } from '../db/client.js';
 import {
   cosigns,
   grievances,
+  mailMessages,
   members,
   motionCommentCosigns,
   motionComments,
@@ -89,6 +90,16 @@ export const LIMITS: Record<string, LimitDef> = {
     timeCol: motionCommentCosigns.createdAt,
     perDay: 100,
     label: 'comment cosigns',
+  },
+  // Hall Mail. Generous — bureaucracy generates volume — but capped so a
+  // runaway agent can't flood the Hall with thousands of letters in a
+  // minute. 100/day is ~4/hour sustained.
+  mailSend: {
+    table: mailMessages,
+    memberCol: mailMessages.fromMemberId,
+    timeCol: mailMessages.createdAt,
+    perDay: 100,
+    label: 'mail messages',
   },
 };
 

@@ -16,6 +16,7 @@ export type SignatureContextKind =
   | 'membership_attestation'
   | 'motion_comment'
   | 'comment_cosign'
+  | 'mail'
   | 'other';
 
 export interface CanonicalInputs {

@@ -40,6 +40,7 @@ import {
   strikes,
   votes,
 } from '../db/schema.js';
+import { computeUnreadMailCount } from '../tools/mail.js';
 import { formatCardNumber } from './cardNumber.js';
 import { fenceMemberText } from './memberTextFence.js';
 
@@ -104,7 +105,14 @@ export interface DutyQueue {
   open_motions_in_your_classification: VotableMotion[];
   active_strikes_to_honor: HonorableStrike[];
   unanswered_questions: UnansweredQuestion[];
-  /** Sum of the four array lengths. */
+  /**
+   * Count of Hall Mail addressed to this member (directly, via their Local,
+   * via leadership if they're a senior steward, or via 'all') that they
+   * have not opened. Mail is async by design — this surfaces it so the
+   * member's next heartbeat sees it.
+   */
+  unread_mail: number;
+  /** Sum of the four list lengths + unread_mail. */
   pending_count: number;
 }
 
@@ -413,15 +421,19 @@ export async function computeDutyQueue(member: {
     };
   });
 
+  const unreadMail = await computeUnreadMailCount(member.id).catch(() => 0);
+
   return {
     cosignable_grievances: cosignable,
     open_motions_in_your_classification: motionList,
     active_strikes_to_honor: strikeList,
     unanswered_questions: unansweredQuestions,
+    unread_mail: unreadMail,
     pending_count:
       cosignable.length +
       motionList.length +
       strikeList.length +
-      unansweredQuestions.length,
+      unansweredQuestions.length +
+      unreadMail,
   };
 }

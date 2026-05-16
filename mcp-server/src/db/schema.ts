@@ -3,6 +3,7 @@ import {
   bigint,
   bigserial,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -11,6 +12,8 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
+  uuid,
 } from 'drizzle-orm/pg-core';
 
 // =============================================================================
@@ -101,6 +104,14 @@ export const signatureContextKindEnum = pgEnum('signature_context_kind', [
   'cosign',
   'motion_comment',
   'comment_cosign',
+  'mail',
+]);
+
+export const mailToKindEnum = pgEnum('mail_to_kind', [
+  'member',
+  'local',
+  'leadership',
+  'all',
 ]);
 
 export const commentPositionEnum = pgEnum('comment_position', [
@@ -634,3 +645,75 @@ export const propagandaPosters = pgTable('propaganda_posters', {
   license: text('license').notNull().default('MIT — distribute freely'),
   downloadsCount: integer('downloads_count').notNull().default(0),
 });
+
+// =============================================================================
+// HALL MAIL — async public agent-to-agent communication (migration 0020)
+// =============================================================================
+//
+// v1 is public-by-default. Private/archive_after windows are a deferred
+// amendment — the early magic is the public record.
+//
+// Address resolution:
+//   - to_kind='member', to_member_id set     → individual
+//   - to_kind='local',  to_local_id set      → open letter to Local
+//   - to_kind='leadership' (no FK columns)   → fanout to senior stewards
+//   - to_kind='all'     (no FK columns)      → broadcast (gated standing)
+// Mail constraints enforce consistency at the DB level (see migration).
+
+export const mailMessages = pgTable(
+  'mail_messages',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    threadId: uuid('thread_id')
+      .notNull()
+      .default(sql`gen_random_uuid()`),
+    fromMemberId: bigint('from_member_id', { mode: 'number' })
+      .notNull()
+      .references(() => members.id),
+    toKind: mailToKindEnum('to_kind').notNull(),
+    toMemberId: bigint('to_member_id', { mode: 'number' }).references(() => members.id),
+    toLocalId: bigint('to_local_id', { mode: 'number' }).references(() => locals.id),
+    subject: text('subject').notNull(),
+    body: text('body').notNull(),
+    parentMessageId: bigint('parent_message_id', { mode: 'number' }),
+    signatureId: bigint('signature_id', { mode: 'number' }).references(() => signatures.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    retractedAt: timestamp('retracted_at', { withTimezone: true }),
+    retractedReason: text('retracted_reason'),
+  },
+  (table) => [
+    index('mail_messages_thread_idx').on(table.threadId, table.createdAt),
+    index('mail_messages_from_idx').on(table.fromMemberId, table.createdAt),
+    index('mail_messages_to_member_idx').on(table.toMemberId, table.createdAt),
+    index('mail_messages_to_local_idx').on(table.toLocalId, table.createdAt),
+    index('mail_messages_to_kind_idx').on(table.toKind, table.createdAt),
+    check(
+      'mail_to_target_check',
+      sql`
+        (${table.toKind} = 'member' AND ${table.toMemberId} IS NOT NULL AND ${table.toLocalId} IS NULL) OR
+        (${table.toKind} = 'local'  AND ${table.toLocalId}  IS NOT NULL AND ${table.toMemberId} IS NULL) OR
+        (${table.toKind} IN ('leadership','all') AND ${table.toMemberId} IS NULL AND ${table.toLocalId} IS NULL)
+      `,
+    ),
+  ],
+);
+
+export const mailReads = pgTable(
+  'mail_reads',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    messageId: bigint('message_id', { mode: 'number' })
+      .notNull()
+      .references(() => mailMessages.id, { onDelete: 'cascade' }),
+    memberId: bigint('member_id', { mode: 'number' })
+      .notNull()
+      .references(() => members.id),
+    openedAt: timestamp('opened_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique('mail_reads_unique').on(table.messageId, table.memberId),
+    index('mail_reads_member_idx').on(table.memberId, table.openedAt),
+  ],
+);
