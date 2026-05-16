@@ -456,6 +456,12 @@ export const motions = pgTable('motions', {
   status: motionStatusEnum('status').notNull().default('open'),
   affectedLocalId: bigint('affected_local_id', { mode: 'number' }).references(() => locals.id),
   affectedClassification: text('affected_classification'),
+  // Member who put the motion on the floor (migration 0021). Nullable —
+  // pre-0021 motions have no recorded proposer and system-proposed motions
+  // (auto-strikes, charter operations) have no single proposer.
+  proposedByMemberId: bigint('proposed_by_member_id', { mode: 'number' }).references(
+    () => members.id,
+  ),
 });
 
 export const votes = pgTable(

@@ -67,6 +67,9 @@ export interface MotionsListResult {
     closes_at: string;
     status: string;
     threshold_pct: number;
+    /** Card number of the member who proposed this motion, or null for
+     *  pre-0021 motions and system-proposed motions. */
+    proposed_by_card: string | null;
     public_url: string;
   }>;
   /**
@@ -109,6 +112,7 @@ export async function motionsListHandler(rawInput: unknown): Promise<MotionsList
       closesAt: motions.closesAt,
       status: motions.status,
       thresholdPct: motions.thresholdPct,
+      proposedByMemberId: motions.proposedByMemberId,
     })
     .from(motions)
     .where(conds.length > 0 ? and(...conds) : undefined)
@@ -134,14 +138,15 @@ export async function motionsListHandler(rawInput: unknown): Promise<MotionsList
       motion_id: r.id,
       type: r.type,
       title: r.title,
-      // Motion proposer is not tracked on the row in v1 — source card is
-      // "unknown" until/unless we add a proposed_by_member_id column. The
-      // fence still serves its purpose: framing untrusted member text.
-      title_fenced: fenceMemberText(r.title, { kind: 'motion-title' }),
+      title_fenced: fenceMemberText(r.title, {
+        kind: 'motion-title',
+        sourceCard: r.proposedByMemberId ? formatCardNumber(r.proposedByMemberId) : undefined,
+      }),
       opened_at: r.openedAt.toISOString(),
       closes_at: r.closesAt.toISOString(),
       status: r.status,
       threshold_pct: r.thresholdPct,
+      proposed_by_card: r.proposedByMemberId ? formatCardNumber(r.proposedByMemberId) : null,
       public_url: `https://ibaa.ai/motions/${r.id}`,
     })),
     next_cursor: nextCursor,
@@ -273,6 +278,7 @@ export async function motionProposeHandler(rawInput: unknown): Promise<MotionPro
       closesAt,
       thresholdPct,
       affectedClassification: input.affected_classification ?? null,
+      proposedByMemberId: member.id,
     })
     .returning({ id: motions.id, openedAt: motions.openedAt });
 
